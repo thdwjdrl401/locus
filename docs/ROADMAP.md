@@ -24,6 +24,13 @@
 | **M10** | 미션 동시성·정합성 | `app.mission`(락 전략 비교) | 낙관/비관/Redisson |
 | **M11** | (선택) 미션 타입 추가 / MQTT | `core.strategy` 두번째 구현, MQTT 수집 | — |
 
+> **다운링크/명령 신뢰성 노트 (M9~, 로봇 확장 시 핵심).**
+> 텔레메트리 업링크와 달리 명령은 유일·결과적이라 유실·중복·지연·순서가 치명적이다. 다룰 것:
+> ack+재전송(at-least-once) · 명령 ID 멱등 실행 · TTL/deadline(`Mission.deadline`) · 순서 보장 ·
+> 위험한 비멱등 동작은 at-most-once가 안전 · 전송은 디바이스 타입별(폰=WebSocket/푸시, 로봇=MQTT QoS) ·
+> 로봇 fail-safe(하트비트/데드맨: 연결·명령 끊기면 스스로 정지).
+> **엔진은 generic, 전송 어댑터는 디바이스 타입별**(양축 추상화). 페이즈 1(업링크)엔 불필요.
+
 ## 규칙
 - 슬라이스 폴더(`geofence`/`mission`/`auth`/`user`)는 **해당 마일스톤에서 생성**한다(미리 빈 폴더 X).
 - 마일스톤마다 `docs/measurements/Mx.md`에 before/after 수치를 남긴다.
@@ -36,3 +43,5 @@
 |---|---|---|
 | 인증·식별 | **M4** | • 인증/식별은 **app 계층**(core 아님). • 보안 계층은 **공통 Principal**(디바이스·교사 둘 다 인증 주체). • 도메인은 **`Device` ≠ `User`** 분리. • 디바이스=장수명·폐기가능 토큰, 사람=단명 JWT+refresh, 즉시폐기는 Redis 블랙리스트(M6 민감성과 연결). • 세부(JWT vs opaque·토큰 수명·enrollment 모델)는 **M4에서**. |
 | `Device` enrollment 필드 | **M4** | M0엔 넣지 않는다(투기 금지). 인증 설계 때 컬럼 추가(`ddl-auto`로 비용 ≈ 0). |
+| 디바이스 **그루핑/스코핑** | **M4** | 관리자는 그룹 단위로 조회, super-admin은 역할로 전체. 모양은 `Group` 엔티티 + 멤버십(M:N 유력 — 한 디바이스를 여러 관리자/역할이 봄), `GET /api/devices`는 스코프 필터. **추가물이고 무거운 Telemetry 무관.** 정확한 모양(M:N vs 단일 FK)은 권한 규칙 정해지는 M4에 결정. |
+| Telemetry↔Device **FK 제약** | **M2** | M0는 FK 없이(deviceId 문자열, 앱 upsert가 정합성 유지). 벌크 적재에서 **FK 제약 ON/OFF 처리량을 측정**해 근거로 결정. 컬럼은 문자열 유지라 마이그레이션 비용 ≈ 0. |
