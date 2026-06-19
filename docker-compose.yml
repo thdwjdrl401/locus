@@ -1,0 +1,34 @@
+# 의존 인프라 기동용. 애플리케이션은 M8 전까지 호스트 JVM에서 직접 실행한다
+# (M1의 GC·힙 측정을 깨끗하게 하기 위해). 여기엔 인프라만 올린다.
+#
+# 점증 원칙(계획서 §11): 한 마일스톤에 인프라 둘 이상 동시에 올리지 않는다.
+#   M0: mysql (아래)
+#   M2: kafka (+ zookeeper 또는 KRaft)  ← 해당 마일스톤에서 주석 해제/추가
+#   M4: redis                           ← 해당 마일스톤에서 추가
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: locus-mysql
+    environment:
+      # .env가 있으면 그 값을, 없으면 throwaway 기본값을 쓴다 (cp .env.example .env)
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpw}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-locus}
+      MYSQL_USER: ${MYSQL_USER:-locus}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-locuspw}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      # $$ -> 컨테이너 셸에서 $MYSQL_ROOT_PASSWORD 로 확장 (compose 치환 아님)
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -p\"$$MYSQL_ROOT_PASSWORD\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mysql-data:

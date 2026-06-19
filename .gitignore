@@ -1,0 +1,39 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+bin/
+
+# OS
+.DS_Store
+
+# Java / JVM 진단 산출물 (M1: 힙 덤프·GC 로그는 docs로 선별 커밋)
+*.hprof
+*.log
+hs_err_pid*
+
+# 로컬 환경 / 비밀 (public 레포: 절대 커밋 금지 — SECURITY.md 참조)
+*.local
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+secrets/
+application-secret*.yml
+application-local.yml
+
+# OMC 상태 (오케스트레이션 산출물 — 레포에 불필요)
+.omc/

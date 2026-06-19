@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: locus
+
+  # M0: MySQL 단일. docker-compose의 mysql 서비스와 짝.
+  # 자격증명은 env로 외부화(public 레포). 기본값은 로컬 docker-compose 전용 throwaway.
+  # 실제 배포는 DB_URL/DB_USERNAME/DB_PASSWORD 주입. (SECURITY.md 참조)
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/locus?serverTimezone=UTC&characterEncoding=UTF-8}
+    username: ${DB_USERNAME:locus}
+    password: ${DB_PASSWORD:locuspw}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      # M0는 ddl-auto=update로 빠르게. 스키마가 안정되면 validate + Flyway 도입 검토.
+      ddl-auto: update
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+
+# 측정 인프라 (M0부터): Actuator -> Prometheus 스크레이프
+management:
+  endpoints:
+    web:
+      exposure:
+        # M1에서 GC/스레드/풀 메트릭을 더 노출. 운영에선 노출 범위를 좁힌다.
+        include: health, info, prometheus, metrics
+  metrics:
+    tags:
+      application: locus
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
+server:
+  port: 8080
+
+logging:
+  level:
+    com.thdwjdrl.locus: INFO

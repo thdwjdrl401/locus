@@ -1,0 +1,11 @@
+# 시뮬레이터 프로파일 (결정 0005).
+# 실행: ./gradlew bootRun --args='--spring.profiles.active=simulator'
+locus:
+  simulator:
+    enabled: true
+    # 가상 디바이스 수 (Java 21 가상 스레드 1대=1스레드)
+    device-count: 50
+    # 전송 주기(ms)
+    interval-ms: 1000
+    # 텔레메트리 전송 대상 (자기 자신 또는 별도 서버 인스턴스)
+    target-base-url: http://localhost:8080
