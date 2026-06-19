@@ -12,6 +12,7 @@ import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -98,5 +99,22 @@ public class Device {
 
     public Map<String, Object> getMetadata() {
         return metadata;
+    }
+
+    // 업무 키(deviceId) 기반 동등성. deviceId는 생성 시 부여되어 안정적이고 non-null.
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof Device other)) {
+            return false;
+        }
+        return deviceId != null && deviceId.equals(other.deviceId);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(deviceId);
     }
 }
