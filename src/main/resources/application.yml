@@ -30,6 +30,12 @@ management:
   metrics:
     tags:
       application: locus
+    distribution:
+      # 수집 API의 지연 백분위(p95/p99)와 히스토그램을 Prometheus로 노출 → Grafana baseline
+      percentiles-histogram:
+        http.server.requests: true
+      percentiles:
+        http.server.requests: 0.95, 0.99
   prometheus:
     metrics:
       export:
