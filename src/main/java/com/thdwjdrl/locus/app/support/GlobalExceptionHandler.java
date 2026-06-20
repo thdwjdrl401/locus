@@ -1,5 +1,6 @@
 package com.thdwjdrl.locus.app.support;
 
+import com.thdwjdrl.locus.core.domain.InvalidTelemetryException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -29,5 +30,11 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiError handleUnreadable(HttpMessageNotReadableException ex) {
         return ApiError.of("MALFORMED_REQUEST", "요청 본문을 읽을 수 없습니다");
+    }
+
+    @ExceptionHandler(InvalidTelemetryException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiError handleInvalidTelemetry(InvalidTelemetryException ex) {
+        return ApiError.of("INVALID_TELEMETRY", ex.getMessage());
     }
 }
