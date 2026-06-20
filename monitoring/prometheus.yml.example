@@ -1,0 +1,12 @@
+# 복사해서 쓰세요:  cp monitoring/prometheus.yml.example monitoring/prometheus.yml
+# 그리고 targets를 SUT(박스)의 LAN IP로 바꾸세요.
+# (Prometheus 설정은 env 치환을 지원하지 않아 파일에 직접 적습니다. 그래서 실제 prometheus.yml은 .gitignore.)
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: locus
+    metrics_path: /actuator/prometheus
+    static_configs:
+      # ↓ SUT(박스) IP:8080 으로 수정. 앱이 같은 호스트면 host.docker.internal:8080
+      - targets: ["192.168.0.10:8080"]

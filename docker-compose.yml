@@ -1,20 +1,20 @@
-# 의존 인프라 기동용. 애플리케이션은 M8 전까지 호스트 JVM에서 직접 실행한다
-# (M1의 GC·힙 측정을 깨끗하게 하기 위해). 여기엔 인프라만 올린다.
+# SUT(타깃 박스)의 의존 인프라. 앱은 M8 전까지 호스트 JVM에서 직접 실행한다.
+# 관측 스택(prometheus/grafana)은 박스 밖(맥북)에서 → docker-compose.monitoring.yml.
 #
-# 점증 원칙(계획서 §11): 한 마일스톤에 파이프라인 인프라 둘 이상 동시에 올리지 않는다.
-#   M0: mysql (아래) + 측정용 prometheus/grafana(monitoring 프로파일, 옵트인)
-#   M2: kafka (+ zookeeper 또는 KRaft)  ← 해당 마일스톤에서 주석 해제/추가
-#   M4: redis                           ← 해당 마일스톤에서 추가
+# 점증 원칙: 한 마일스톤에 파이프라인 인프라 둘 이상 동시에 올리지 않는다.
+#   M0: mysql (아래)
+#   M2: kafka  ← 해당 마일스톤에서 추가
+#   M4: redis  ← 해당 마일스톤에서 추가
 #
-# 기본:        docker compose up -d                      (mysql만)
-# 측정 시:     docker compose --profile monitoring up -d  (+ prometheus/grafana)
+# 기동: docker compose up -d
+# 버전 고정(재현성): 측정이 비교 가능하려면 떠다니는 태그를 쓰지 않는다.
 
 services:
   mysql:
-    image: mysql:8.0
+    image: mysql:8.0.40
     container_name: locus-mysql
     environment:
-      # .env가 있으면 그 값을, 없으면 throwaway 기본값을 쓴다 (cp .env.example .env)
+      # .env가 있으면 그 값을, 없으면 throwaway 기본값 (cp .env.example .env)
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpw}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-locus}
       MYSQL_USER: ${MYSQL_USER:-locus}
@@ -26,6 +26,8 @@ services:
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
+      # 측정 튜닝(8GB 박스): 버퍼풀 고정 → M0·M7 비교 가능. 내구성은 기본값(실 타깃 모습).
+      - --innodb-buffer-pool-size=2G
     healthcheck:
       # $$ -> 컨테이너 셸에서 $MYSQL_ROOT_PASSWORD 로 확장 (compose 치환 아님)
       test: ["CMD-SHELL", "mysqladmin ping -h localhost -p\"$$MYSQL_ROOT_PASSWORD\" || exit 1"]
@@ -33,33 +35,5 @@ services:
       timeout: 5s
       retries: 5
 
-  # --- 측정 인프라 (monitoring 프로파일에서만 기동) ---
-  # 앱은 호스트 JVM에서 돌므로 prometheus가 host.docker.internal:8080을 스크레이프한다.
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: locus-prometheus
-    profiles: ["monitoring"]
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-  grafana:
-    image: grafana/grafana:latest
-    container_name: locus-grafana
-    profiles: ["monitoring"]
-    ports:
-      - "3000:3000"
-    environment:
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
-    volumes:
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - grafana-data:/var/lib/grafana
-
 volumes:
   mysql-data:
-  grafana-data:

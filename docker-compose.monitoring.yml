@@ -1,0 +1,34 @@
+# 관측 스택 — SUT(박스) 밖, 보통 맥북에서 실행. Prometheus가 SUT를 LAN으로 pull-스크레이프한다.
+# 준비:  cp monitoring/prometheus.yml.example monitoring/prometheus.yml   → targets를 박스 IP로
+# 기동:  docker compose -f docker-compose.monitoring.yml up -d
+# Grafana http://localhost:3000  ·  Prometheus http://localhost:9090
+#
+# 버전 고정(재현성): 측정 비교를 위해 떠다니는 :latest를 쓰지 않는다.
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.2
+    container_name: locus-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      # 앱이 *같은 호스트*에 있을 때만 의미(원격 박스면 prometheus.yml에 박스 IP를 직접 적음)
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    container_name: locus-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  grafana-data:

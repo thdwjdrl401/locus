@@ -37,3 +37,8 @@ application-local.yml
 
 # OMC 상태 (오케스트레이션 산출물 — 레포에 불필요)
 .omc/
+
+# 측정: 생성물 (prometheus.yml은 .example에서 복사·박스IP 주입, GC 로그)
+monitoring/prometheus.yml
+logs/
+*.hprof

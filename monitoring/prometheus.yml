@@ -1,9 +1,0 @@
-# Prometheus 스크레이프 설정. 앱은 호스트 JVM에서 돌므로(M8 전까지) host.docker.internal로 접근.
-global:
-  scrape_interval: 5s
-
-scrape_configs:
-  - job_name: locus
-    metrics_path: /actuator/prometheus
-    static_configs:
-      - targets: ["host.docker.internal:8080"]
