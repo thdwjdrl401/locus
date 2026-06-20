@@ -5,9 +5,9 @@
 
 > 데모 시나리오: 외부활동(현장학습) 중 인솔 교사가 다수 학생 단말의 위치·상태를 모니터링.
 
-## 개발 철학
-**순진하게 구현 → 일부러 부하 → 문제 재현 → 진단 → 개선 → 측정으로 증명.**
-모든 변경은 `docs/measurements/`에 before/after 수치로 남긴다. 숫자 없으면 개선이 아니다.
+## 엔지니어링 원칙
+**가장 단순한 정답부터 만들고(YAGNI) → 부하·프로파일링으로 실제 병목을 찾고 → 측정 근거로 개선한다.**
+성능·구조 변경은 `docs/measurements/`에 before/after 수치로 남긴다. 추측이 아니라 측정으로 판단한다.
 
 ## 스택
 Java 21 · Spring Boot 3.4 · Gradle (Kotlin DSL) · MySQL 8 · (M2~)Kafka · (M4~)Redis · k6 · Docker/k8s(M8)
