@@ -22,11 +22,10 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Spotless check (포맷 강제)
-        run: ./gradlew spotlessCheck
-
-      - name: Test (ArchUnit 경계 포함)
-        run: ./gradlew test
+      # check = spotlessCheck + test(단위/웹·ArchUnit) + integrationTest(Testcontainers 실 MySQL).
+      # GitHub Actions ubuntu는 표준 Docker(/var/run/docker.sock)라 별도 설정 불필요.
+      - name: Build · format · test (unit/web + integration)
+        run: ./gradlew check
 
   secret-scan:
     name: gitleaks (비밀 유출 스캔)

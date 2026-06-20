@@ -46,6 +46,55 @@ tasks.withType<Test> {
     useJUnitPlatform()
 }
 
+// 테스트 2층 분리(jvm-test-suite):
+//   test            = 단위 + 웹(MockMvc), 빠름, Docker 불필요
+//   integrationTest = 통합(Testcontainers 실 MySQL), 느림, Docker 필요  (src/integrationTest/java)
+testing {
+    suites {
+        val integrationTest by registering(JvmTestSuite::class) {
+            useJUnitJupiter()
+            dependencies {
+                implementation(project())
+                implementation("org.springframework.boot:spring-boot-starter-test")
+                implementation("org.springframework.boot:spring-boot-testcontainers")
+                implementation("org.testcontainers:junit-jupiter")
+                implementation("org.testcontainers:mysql")
+            }
+            targets {
+                all {
+                    testTask.configure {
+                        shouldRunAfter(tasks.named("test"))
+                        // 비표준 Docker 소켓(colima 등): Gradle 프로세스의 환경변수를 테스트 JVM에 명시 전달.
+                        // CI의 표준 Docker(/var/run/docker.sock)에선 이 변수들이 없어 영향 없음.
+                        listOf(
+                            "DOCKER_HOST",
+                            "DOCKER_API_VERSION",
+                            "TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE",
+                            "TESTCONTAINERS_HOST_OVERRIDE",
+                        ).forEach { key -> System.getenv(key)?.let { environment(key, it) } }
+                        // 매우 새 Docker 데몬(colima의 Docker 29, 최소 API 1.44) 대응:
+                        // docker-java가 기본 1.32로 협상해 400나는 걸 막는다. CI(표준 Docker)엔 env가 없어 미적용.
+                        System.getenv("DOCKER_API_VERSION")?.let { systemProperty("api.version", it) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// integrationTest가 main의 implementation/runtimeOnly(web·jpa·validation·mysql 등)를 그대로 상속
+configurations.named("integrationTestImplementation") {
+    extendsFrom(configurations.implementation.get())
+}
+configurations.named("integrationTestRuntimeOnly") {
+    extendsFrom(configurations.runtimeOnly.get())
+}
+
+// check는 단위/웹 + 통합 모두 실행 (CI 게이트)
+tasks.named("check") {
+    dependsOn(testing.suites.named("integrationTest"))
+}
+
 // 포매터: 코드 스타일 잡음 제거 + CI에서 spotlessCheck로 강제.
 // google-java-format AOSP 변형 = 4-space 들여쓰기.
 spotless {

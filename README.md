@@ -26,10 +26,21 @@ docker compose up -d
 # 3) 시뮬레이터로 실행 (가상 폰 N대 전송)
 ./gradlew bootRun --args='--spring.profiles.active=simulator'
 
-# 4) 아키텍처 경계 검증 + 테스트
+# 4) 단위 + 웹 테스트 (빠름, Docker 불필요)
 ./gradlew test
+
+# 5) 통합 테스트 (Testcontainers 실 MySQL, Docker 필요) — test + integrationTest를 함께
+./gradlew check
 ```
 - Actuator/Prometheus: http://localhost:8080/actuator/prometheus
+
+> **통합 테스트 로컬 실행 (colima 사용 시):** Testcontainers가 colima 소켓·새 Docker(29) API를 인식하도록 아래 env가 필요하다(빌드가 테스트 JVM에 전달). CI(GitHub Actions 표준 Docker)는 불필요.
+> ```bash
+> export DOCKER_HOST="unix://$HOME/.colima/default/docker.sock"
+> export DOCKER_API_VERSION=1.44
+> export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
+> ```
+> colima는 MySQL 컨테이너에 여유가 필요하다: `colima start --cpu 4 --memory 6`. (Docker Desktop을 쓰면 위 env 없이 동작.)
 
 ## 구조와 결정
 이 프로젝트는 **결정의 이유**를 문서로 남긴다. 코드를 읽기 전에 먼저 보면 좋다.
