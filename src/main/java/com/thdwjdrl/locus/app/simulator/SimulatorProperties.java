@@ -17,7 +17,7 @@ public class SimulatorProperties {
     private long intervalMs = 1000;
 
     /** 텔레메트리 전송 대상(자기 자신 또는 별도 인스턴스). */
-    private String targetBaseUrl = "http://localhost:8080";
+    private String targetBaseUrl = "http://localhost:8093";
 
     public int getDeviceCount() {
         return deviceCount;

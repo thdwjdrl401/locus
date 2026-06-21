@@ -8,4 +8,4 @@ locus:
     # 전송 주기(ms)
     interval-ms: 1000
     # 텔레메트리 전송 대상 (자기 자신 또는 별도 서버 인스턴스)
-    target-base-url: http://localhost:8080
+    target-base-url: http://localhost:8093
