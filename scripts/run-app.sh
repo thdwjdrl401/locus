@@ -18,7 +18,16 @@ fi
 
 mkdir -p logs
 echo "실행: ${JAR}"
-exec java \
+
+# Locus를 박스의 ≈3/4로 격리: CPU는 core 0–5에 핀(docker MySQL의 cpuset와 동일 경계),
+# 메모리는 -Xmx1500m로 바운드 → 시스템 MySQL+OS에 1/4(코어 6–7, ~2G) 예약.
+# taskset 없으면(다른 OS) 어피니티 없이 그대로 실행.
+PIN=()
+if command -v taskset >/dev/null 2>&1; then
+  PIN=(taskset -c 0-5)
+fi
+
+exec "${PIN[@]}" java \
   -Xms1500m -Xmx1500m \
   -XX:+UseG1GC \
   -Xlog:gc*:file=logs/gc.log:time,uptime,level,tags \
