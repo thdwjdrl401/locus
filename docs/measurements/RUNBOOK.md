@@ -38,18 +38,15 @@ sudo sysctl vm.swappiness=10
 ip -4 addr | grep inet      # ← 박스 IP 기억 (맥에서 씀)
 ```
 
-## 1. 매 측정 — 앱+DB 기동 (빌드는 맥, 실행은 박스)
-> **빌드는 박스 밖(맥)에서 하고 jar만 scp로 전달**한다. 이유: 박스에 Gradle·의존성 캐시·빌드 IO를 안 얹고(8GB/HDD 보호), jar는 플랫폼 독립이라 박스에서 동일하게 돈다. CI/CD 정신(빌드 산출물 그대로 승격)과도 일치.
+## 1. 매 측정 — 박스에서 빌드·DB 기동·앱 실행
+> 솔로 측정 루프라 박스 한 곳에서 빌드·실행한다(jar는 어디서 빌드해도 동일). 단 **측정 직전 Gradle 데몬을 꺼** 측정 중 RAM 오염을 막는다. (CI/CD·플릿 규모로 가면 빌드를 박스 밖으로 분리 — ROADMAP "CD 자동화" 가드레일.)
 ```bash
-# 맥: 빌드 후 jar만 박스로
-./gradlew bootJar
-scp build/libs/locus-*.jar lazy@박스IP:~/locus/build/libs/
-
-# 박스: DB 기동 + 앱 실행
 cd locus
-git pull                          # 설정 파일만(compose/scripts/.env/load) — 박스는 빌드 안 함
+git pull                          # 최신 마일스톤 코드
 docker compose up -d              # Locus MySQL (8.0.40, 3307, buffer_pool 2G, cpuset 0-5, mem 3G)
-scripts/run-app.sh                # scp된 jar를 taskset -c 0-5로 실행, 힙 1.5G 고정, logs/gc.log
+./gradlew bootJar                 # 박스에서 빌드
+./gradlew --stop                  # 측정 전 Gradle 데몬 종료 → 측정 중 RAM 오염 0
+scripts/run-app.sh                # jar를 taskset -c 0-5로 실행, 힙 1.5G 고정, logs/gc.log
 
 # 기동 직후 위생 점검: 시스템 MySQL은 살아있고, 스왑은 0이어야 한다.
 systemctl is-active mysql          # 시스템 DB active (공존 — 끄지 않음)
