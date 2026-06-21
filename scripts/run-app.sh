@@ -10,6 +10,16 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# .env를 앱에도 넘긴다(compose와 단일 소스). 앱은 DB_URL/DB_USERNAME/DB_PASSWORD를 env로 읽음.
+# 값에 &·? 가 있어 `source`는 위험 → 주석/빈 줄 건너뛰고 첫 '='만 분리해 그대로 export.
+if [[ -f .env ]]; then
+  while IFS='=' read -r key val; do
+    [[ "${key}" =~ ^[[:space:]]*# ]] && continue
+    [[ -z "${key}" ]] && continue
+    export "${key}=${val}"
+  done < .env
+fi
+
 JAR=$(ls build/libs/locus-*.jar 2>/dev/null | grep -v plain | head -1 || true)
 if [[ -z "${JAR}" ]]; then
   echo "jar 없음. 먼저 ./gradlew bootJar 실행" >&2
