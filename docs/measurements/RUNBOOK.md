@@ -38,13 +38,18 @@ sudo sysctl vm.swappiness=10
 ip -4 addr | grep inet      # ← 박스 IP 기억 (맥에서 씀)
 ```
 
-## 1. 매 측정 — 박스에서 앱+DB 기동
+## 1. 매 측정 — 앱+DB 기동 (빌드는 맥, 실행은 박스)
+> **빌드는 박스 밖(맥)에서 하고 jar만 scp로 전달**한다. 이유: 박스에 Gradle·의존성 캐시·빌드 IO를 안 얹고(8GB/HDD 보호), jar는 플랫폼 독립이라 박스에서 동일하게 돈다. CI/CD 정신(빌드 산출물 그대로 승격)과도 일치.
 ```bash
-cd locus
-git pull                          # 최신 마일스톤 코드
-docker compose up -d              # Locus MySQL (8.0.40, 3307, buffer_pool 2G, cpuset 0-5, mem 3G)
+# 맥: 빌드 후 jar만 박스로
 ./gradlew bootJar
-scripts/run-app.sh                # taskset -c 0-5 java -jar, 힙 1.5G 고정, logs/gc.log
+scp build/libs/locus-*.jar lazy@박스IP:~/locus/build/libs/
+
+# 박스: DB 기동 + 앱 실행
+cd locus
+git pull                          # 설정 파일만(compose/scripts/.env/load) — 박스는 빌드 안 함
+docker compose up -d              # Locus MySQL (8.0.40, 3307, buffer_pool 2G, cpuset 0-5, mem 3G)
+scripts/run-app.sh                # scp된 jar를 taskset -c 0-5로 실행, 힙 1.5G 고정, logs/gc.log
 
 # 기동 직후 위생 점검: 시스템 MySQL은 살아있고, 스왑은 0이어야 한다.
 systemctl is-active mysql          # 시스템 DB active (공존 — 끄지 않음)
