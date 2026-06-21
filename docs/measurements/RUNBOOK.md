@@ -9,7 +9,7 @@
 
 ```
 [박스 = SUT]  앱(java -jar) + MySQL(docker)
-     ▲ 8080 부하        ▲ 8080/actuator/prometheus 스크레이프
+     ▲ 8093 부하        ▲ 8093/actuator/prometheus 스크레이프
      │ 유선 LAN          │ 유선 LAN
 [맥북]  k6           +   Prometheus + Grafana
 ```
@@ -32,8 +32,8 @@ cp .env.example .env
 #  → .env에서: MYSQL_HOST_PORT=3307
 #             DB_URL=jdbc:mysql://localhost:3307/locus?serverTimezone=UTC&characterEncoding=UTF-8
 
-# 부하 포트 LAN 개방 + 스왑 회피(HDD라 스왑=재앙)
-sudo ufw allow 8080/tcp
+# 부하 포트 LAN 개방(인증 없는 M0 엔드포인트 → LAN만, 공개는 nginx 443) + 스왑 회피(HDD라 스왑=재앙)
+sudo ufw allow from 192.168.219.0/24 to any port 8093
 sudo sysctl vm.swappiness=10
 ip -4 addr | grep inet      # ← 박스 IP 기억 (맥에서 씀)
 ```
@@ -58,17 +58,17 @@ free -h                            # Swap used = 0 확인 (HDD 스왑 들어가�
 ```bash
 cd locus
 cp monitoring/prometheus.yml.example monitoring/prometheus.yml
-#  → targets를 박스 IP:8080 으로 수정
+#  → targets를 박스 IP:8093 으로 수정
 
 docker compose -f docker-compose.monitoring.yml up -d   # Prometheus+Grafana
 #  Grafana http://localhost:3000 에서 박스 메트릭 뜨는지 확인
 
 # 연결 확인
-curl -s http://박스IP:8080/actuator/prometheus | head
+curl -s http://박스IP:8093/actuator/prometheus | head
 
 # 부하 (둘 중 택1)
-k6 run -e BASE_URL=http://박스IP:8080 load/telemetry-baseline.js   # 고정 부하 baseline
-k6 run -e BASE_URL=http://박스IP:8080 load/telemetry-stress.js     # 한계(knee) 탐색
+k6 run -e BASE_URL=http://박스IP:8093 load/telemetry-baseline.js   # 고정 부하 baseline
+k6 run -e BASE_URL=http://박스IP:8093 load/telemetry-stress.js     # 한계(knee) 탐색
 ```
 
 ## 3. 기록 → `docs/measurements/Mx.md`

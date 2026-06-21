@@ -1,5 +1,5 @@
 // capacity 탐색 — VU를 한계까지 단계적으로 올려 "무너지는 지점(knee)"을 찾는다.
-//   실행: k6 run -e BASE_URL=http://박스IP:8080 load/telemetry-stress.js
+//   실행: k6 run -e BASE_URL=http://박스IP:8093 load/telemetry-stress.js
 // p95가 급증하거나 에러율이 오르거나 처리량이 정체되는 단계가 타깃 박스의 한계.
 import http from "k6/http";
 import { check } from "k6";
@@ -20,7 +20,7 @@ export const options = {
   },
 };
 
-const BASE = __ENV.BASE_URL || "http://localhost:8080";
+const BASE = __ENV.BASE_URL || "http://localhost:8093";
 
 export default function () {
   const deviceId = `phone-${String(__VU).padStart(4, "0")}`;
