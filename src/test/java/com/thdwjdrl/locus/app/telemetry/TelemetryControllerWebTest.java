@@ -3,13 +3,19 @@ package com.thdwjdrl.locus.app.telemetry;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.thdwjdrl.locus.core.domain.DeviceType;
 import com.thdwjdrl.locus.core.domain.InvalidTelemetryException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -23,6 +29,7 @@ class TelemetryControllerWebTest {
 
     @Autowired private MockMvc mockMvc;
     @MockitoBean private TelemetryIngestService ingestService;
+    @MockitoBean private TelemetryQueryService queryService;
 
     private String json(String timestamp, String deviceField, String lat) {
         return """
@@ -92,5 +99,40 @@ class TelemetryControllerWebTest {
                                 .content(validJson()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_TELEMETRY"));
+    }
+
+    private TelemetryResponse sample(String deviceId) {
+        return new TelemetryResponse(
+                deviceId,
+                DeviceType.PHONE,
+                Instant.parse("2026-06-22T00:00:00Z"),
+                Instant.parse("2026-06-22T00:00:01Z"),
+                new TelemetryResponse.LocationDto(37.0, 127.0, 5.0, null, 1.0, 90.0),
+                Map.of());
+    }
+
+    @Test
+    void 디바이스_최신조회는_200과_위치를_반환() throws Exception {
+        when(queryService.latest("phone-1")).thenReturn(Optional.of(sample("phone-1")));
+        mockMvc.perform(get("/api/telemetry/phone-1/latest"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deviceId").value("phone-1"))
+                .andExpect(jsonPath("$.location.lat").value(37.0));
+    }
+
+    @Test
+    void 최신_텔레메트리_없으면_404() throws Exception {
+        when(queryService.latest("ghost")).thenReturn(Optional.empty());
+        mockMvc.perform(get("/api/telemetry/ghost/latest")).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void 전체_최신목록은_200_배열() throws Exception {
+        when(queryService.latestPerDevice())
+                .thenReturn(List.of(sample("phone-1"), sample("phone-2")));
+        mockMvc.perform(get("/api/telemetry/latest"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].deviceId").value("phone-1"))
+                .andExpect(jsonPath("$[1].deviceId").value("phone-2"));
     }
 }
