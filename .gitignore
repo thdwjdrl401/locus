@@ -21,6 +21,8 @@ bin/
 *.hprof
 *.log
 hs_err_pid*
+# 예외: 측정 원본 로그(iostat 등)는 docs/measurements/*-raw/에 선별 커밋한다
+!docs/measurements/**/*.log
 
 # 로컬 환경 / 비밀 (public 레포: 절대 커밋 금지 — SECURITY.md 참조)
 *.local
