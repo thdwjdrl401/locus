@@ -2,19 +2,37 @@
 
 각 마일스톤이 코드의 **어디에 떨어지는지**와 그때 **추가되는 인프라/포트**. 상세는 계획서.
 
+## 🎯 목표 SLO +  포지셔닝 (2026-06-30)
+**: 디지털트윈/IoT 센서 파이프라인 직군**(예: 도메인 직군). 도메인이 Locus와 일치.
+
+**목표 SLO (설계 목표 — 도메인 요구가 명확치 않으니 직접 정함, 정직):**
+| 경로 | 목표 | 현재 | 달성 수단 |
+|---|---|---|---|
+| 업링크 적재 | **10,000 req/s** | M1 1,437 (14%) | 순차 저장(TimescaleDB) — 디스크 병목의 측정 기반 답 |
+| 조회 최신 | 1만 대 실시간 | naive 서브쿼리 | Redis 캐시 + WebSocket(M4) |
+| 다운링크 명령 | ~500~1,000대 | — | 정합성(멱등·ack·순서, 페이즈2) |
+> 가치는 **측정된 서사**(랜덤→순차 X배)지 10k 숫자 자체 아님. 실측 최대치(헤드룸)도 함께 측정.
+
+**방향 매핑** (필수=★):
+- ★ Java/REST = M0~ ✅ · ★ **WebSocket** = M4 · ★ **PostgreSQL** = TimescaleDB(M2) · ★ **MQTT 브로커** = M-MQTT
+- 우대: **시계열 DB**=TimescaleDB(M2) · Docker ✅/K8s=M8 · 클라우드=설계
+- **폐기: GC/메모리 튜닝** — 이 워크로드는 I/O 바운드라 비병목(측정), 도메인에도 없음.
+
 ## 페이즈 1 — 수집·조회·모니터링
 
 | M | 주제 | 주요 위치 | 추가 인프라 | 포트(0004) |
 |---|---|---|---|---|
 | **M0** | 모델·검증·시뮬레이터·측정 | `core.domain`, `app.telemetry`, `app.device`, `app.simulator` | MySQL | — |
-| **M1** | 적재 천장 깨기(fsync 분할) | `app.telemetry`(배치 적재), MySQL 설정, k6 | — | — |
-| **M2** | 배치 적재(인메모리 큐) | `app.telemetry`(배치 워커) | — (fan-out 브로커는 M4 Redis Streams, [ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)) | 수집 `TelemetryIngestPort` |
-| **M3** | 추상화 검증 | `app.device`(TagHandler/TagProfile), `core.strategy` enum | — | — |
-| **M4** | 실시간 푸시·최신상태 캐시 + **인증/식별** | `app.telemetry`/`device`, `app.auth`(신규), `app.user`(신규), `app.config(Redis/WebSocket)` | **Redis** (캐시 **+ Streams 브로커** 겸용, [0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)) | `LatestStateLookup` |
-| **M5** | 도달/이탈 판정 엔진 | `core.engine`, `app.geofence`(신규) | (Redis 재사용 — Stream `geofence` Consumer Group) | `GeofenceStateStore` |
-| **M6** | 민감정보 보호 | `core.domain`(암호화 컬럼), `app.support`(마스킹), 스케줄러 | — | — |
-| **M7** | 대용량 조회·복제 | `app.telemetry`(커서), `app.config(라우팅DS)` | MySQL 읽기 복제 | — |
-| **M8** | 컨테이너·k8s | `Dockerfile`, k8s manifests | (앱 컨테이너화) | — |
+| **M1** | 적재 포화점 높이기(fsync 분할) ✅ | `app.telemetry`(인메모리 큐+배치), MySQL 설정, k6 | — | 수집 `TelemetryIngestPort`(A2) |
+| **M2** | **TimescaleDB 전환**(순차 저장) ★PostgreSQL+시계열 | `core.domain`/`app.telemetry` 영속 이식, `TelemetryBatchDao` | **TimescaleDB**(PostgreSQL 확장) | (배치 DAO 재사용) |
+| **M4** | **실시간: Redis 캐시 + WebSocket 푸시** ★WebSocket | `app.telemetry`/`device`, `app.config(Redis/WebSocket)` | **Redis**(캐시+Streams fan-out, [0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)) | `LatestStateLookup` |
+| **M-MQTT** | **MQTT 수집 경로** ★브로커 | `app.telemetry`(MQTT 수신 어댑터→기존 `IngestService` 합류) | **MQTT broker**(Mosquitto 등) | 수집 입구만 확장 |
+| **M3** | 추상화 검증(디바이스 타입) | `app.device`(둘째 핸들러), `core.strategy` enum | — | — |
+| **M5** | 도달/이탈 판정 엔진 | `core.engine`, `app.geofence`(신규) | (Redis Stream `geofence` CG) | `GeofenceStateStore` |
+| **M6** | 민감정보 보호·보존 | `core.domain`(암호화), `app.support`(마스킹) | — (보존은 TimescaleDB retention 흡수, [0008](decisions/0008-telemetry-store-timescaledb.md)) | — |
+| **M7** | 대용량 조회·복제 | `app.telemetry`(커서), 라우팅DS | (파티셔닝은 TimescaleDB 하이퍼테이블 흡수) PostgreSQL 읽기복제 | — |
+| **M8** | 컨테이너·**k8s**(우대) | `Dockerfile`, k8s manifests | (앱 컨테이너화) | — |
+| (보류) | 인증/식별 | `app.auth`/`app.user` | — | (보류표) |
 
 ## 페이즈 2 — 미션 (다운링크)
 
@@ -22,7 +40,7 @@
 |---|---|---|---|
 | **M9** | 명령 경로 + 미션 도메인 | `app.mission`(신규), `core.strategy(MissionType)`, `core.domain(Mission)` | M5 `ReachEvaluator` 재사용 |
 | **M10** | 미션 동시성·정합성 | `app.mission`(락 전략 비교) | 낙관/비관/Redisson |
-| **M11** | (선택) 미션 타입 추가 / MQTT | `core.strategy` 두번째 구현, MQTT 수집 | — |
+| **M11** | (선택) 미션 타입 추가 | `core.strategy` 두번째 구현 | — (MQTT 수집은 페이즈1 M-MQTT로 당겨옴) |
 
 > **다운링크/명령 신뢰성 노트 (M9~, 로봇 확장 시 핵심).**
 > 텔레메트리 업링크와 달리 명령은 유일·결과적이라 유실·중복·지연·순서가 치명적이다. 다룰 것:

@@ -6,37 +6,33 @@
 
 ---
 
-## 🎯 현재 포커스 — M1 A1 설정 실험
+## 🎯 현재 포커스 — 방향 + M2 TimescaleDB 전환
 
 | | |
 |---|---|
-| **한 줄** | **M1 측정 전부 완료(2026-06-29)**: 배치로 적재 포화점 **33→~1,437 req/s (~44×), 내구성 유지**(flush=1). A2-x·A3로 교란변수·상한까지 확인. M1 결론 닫힘. |
-| **방금 끝낸 것** | A2/A2-x/A3 측정·기록 완료. 결론: 배치(A2)가 fsync 병목을 풀어 44배, flush·upsert는 추가 효과 없음 → A2가 최종. [`M1.md`](measurements/M1.md). |
-| **다음 한 걸음** | M1 커밋·푸시 → **`m1` 태그 검토** → **M2 착수**(인메모리 큐 본구현 = A2 승격, FK 제약 측정). |
-| **메모** | 포화점에서 CPU 처음 ~0.10~0.15(병목 이동 조짐, M2/M7 추적). A2 한계(앱 크래시 시 큐·드롭 유실)는 M4 Redis Streams 명분. |
+| **한 줄** | **방향 전환(2026-06-30)**: 도메인(디지털트윈/IoT 시계열, 예: )에 맞춰 로드맵 재정렬. M1(1,437)이 디스크 병목 측정 근거 → **다음 = M2 TimescaleDB 전환**(순차 저장 = PostgreSQL필수+시계열우대+병목 해결). |
+| **방금 끝낸 것** | M1 측정 완결(배치로 33→1,437, ~44×). 방향 결정 + 문서 반영(ADR 0008 신규·0007 보강·ROADMAP SLO). |
+| **다음 한 걸음** | M2 TimescaleDB 전환 착수: 영속 계층 이식 + 적재 포화점 재측정(before=MySQL 1,437). 또는 빠른 필수승리 WebSocket(M4) 먼저. |
+| **메모** | GC 튜닝 폐기(I/O 바운드라 비병목, 측정 근거). SLO: 업링크 10k·조회 1만·다운링크 ~500. 측정 정체성 유지(키워드 아닌 측정 정당화). |
 
 ---
 
-## 🧭 포지셔닝 & 헤드라인 서사 (2026-06-28 결정)
+## 🧭 포지셔닝 (2026-06-30 방향으로 갱신)
 
-**전략: 프로젝트 우선 · 성능/백엔드 헤드라인.** 11개 마일스톤을 다 똑같이 파지 않고, **2개 경로에 깊이를 몰아** "naive → 측정 → 병목 → 재설계 → 재측정" 서사를 만든다.
+**전략: 디지털트윈/IoT 시계열 직군 포지셔닝** + 측정 주도 정체성 유지. 상세 SLO·역량 매핑은 [ROADMAP §목표 SLO](ROADMAP.md).
 
-- **🦴 척추(깊게):**
-  - **쓰기 경로** — `M0`(baseline) → `M1`(fsync 배치) → `M2`(인메모리 큐 배치)
-  - **읽기 경로** — `M4`(최신상태 Redis 캐시) → `M7`(시간 파티셔닝·커서)
-- **🎬 조연(설계만/가볍게):** `M3` 추상화(하루짜리, 아키텍처 크레딧) · `M5`·`M6`·`M8`·페이즈2 — ROADMAP에 설계만 남김.
+- **🦴 척추(깊게, 핵심):** 적재 성능(M0→M1→**M2 TimescaleDB**) · 실시간(**M4 Redis+WebSocket**) · 수집 프로토콜(**M-MQTT**)
+- **🎬 조연/우대:** M3 추상화 · M5 지오펜스 · M6 보안 · **M8 k8s(우대)** · 페이즈2 정합성
+- **폐기:** GC/메모리 튜닝(I/O 바운드라 비병목 — 측정 근거, 도메인에도 없음)
 
-**목표 데이터 흐름(북극성) — 인프라 역할이 갈리는 곳 ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)):**
+**목표 데이터 흐름(북극성) ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)·[0008](decisions/0008-telemetry-store-timescaledb.md)):**
 ```
-Device → POST → [M2 인메모리 큐+배치] → MySQL raw (원본 이력·운영 리플레이 원천: 단기 보존)
-   (두 번째 소비자 생기면, M4~) → Redis Stream 단기버퍼(MAXLEN) ─ Consumer Group fan-out:
-        ├ storage   → MySQL raw          ├ monitoring → 실시간 푸시(M4)   └ geofence → 판정(M5)
-   Redis 캐시(같은 Redis): 최신상태(작고·뜨겁고·휘발 → 지도)                                  ← 읽기경로(M4)
-   (로봇만, 페이즈2) MySQL raw → 미션 집계 → Mission Archive(장기·도메인 리플레이). 폰=경로 없음.
+Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순차 저장, 보존·압축 내장)
+   (M4~) Redis Stream fan-out: ├ storage  ├ monitoring→WebSocket 푸시  └ geofence
+   Redis 캐시: 디바이스별 최신상태 (실시간 지도, 1만 대)
 ```
-- **브로커 = Redis Streams(Kafka 아님)** — fan-out엔 충분·가볍다. Kafka는 Streams 못 버틸 때 측정-게이트 전환. 천장은 싱크(배치)지 브로커 아님.
-- **DeviceType이 데이터 도달범위+보존을 가른다** — 폰은 장기 경로가 **구조상 없음**(정책 아닌 구조로 위치 최소보존).
-> 학습 목표(MQ/Redis Streams/Redis를 *써보며 배우기*)는 이 순서로 충족 — **겪고 → 도입 → 측정**. 한 번에 다 안 올리는 게 YAGNI이자 더 나은 학습 순서.
+- **수집 전송 = HTTP + MQTT**(다른 계층) · **fan-out = Redis Streams**(Kafka 보류) · **저장 = TimescaleDB**(MySQL에서 전환, M1 측정 트리거).
+- **DeviceType이 데이터 도달범위+보존을 가른다** — 폰은 장기 경로 **구조상 없음**(TimescaleDB retention으로 구현).
 
 ---
 
@@ -50,23 +46,27 @@ Device → POST → [M2 인메모리 큐+배치] → MySQL raw (원본 이력·�
 | 2026-06-28 | **메시징/저장 아키텍처 확정**: fan-out 브로커=**Redis Streams**(Kafka 아님) · DeviceType별 보존·도달범위 · 리플레이 2종(운영/도메인) · 폰 장기경로 구조상 없음 | **[ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)** |
 | 2026-06-28 | Kafka는 **Redis Streams 못 버틸 때**의 측정-게이트 전환(사다리 ③) | [ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md) |
 | 2026-06-29 | **STATUS 하네스 기계화** — pre-commit 훅이 실질 변경 시 STATUS 동반 갱신 강제 | `.githooks/pre-commit`, CLAUDE §7, build.gradle.kts |
+| 2026-06-30 | **방향**(디지털트윈/IoT 시계열). 로드맵 재정렬, GC 튜닝 폐기(비병목), 목표 SLO 명시 | [ROADMAP §SLO](ROADMAP.md) |
+| 2026-06-30 | **텔레메트리 저장소 TimescaleDB 전환** — M1 디스크 병목이 트리거. 순차 저장=PostgreSQL+시계열+병목 해결 | **[ADR 0008](decisions/0008-telemetry-store-timescaledb.md)** |
+| 2026-06-30 | **MQTT 수집 추가**(IoT 표준 전송). Redis Streams(fan-out)와 다른 계층, 공존. Kafka는 보류 유지 | [ADR 0007 §MQTT](decisions/0007-messaging-storage-redis-streams-and-governance.md) |
 
 ---
 
 ## 📋 마일스톤 보드 (한눈에)
 
-| M | 주제 | 상태 | 척추/조연 | 추가 인프라 |
+| M | 주제 | 상태 | JD | 추가 인프라 |
 |---|---|---|---|---|
-| **M0** | 모델·수집·조회·시뮬레이터·측정 | ✅ (`m0` 태그) | 🦴 쓰기 | MySQL |
-| **M1** | 적재 포화점 높이기(fsync 분할) | ✅ (배치로 ~44×) | 🦴 쓰기 | — |
-| **M2** | 배치 적재(인메모리 큐) | ⬜ | 🦴 쓰기 | — |
-| **M3** | 추상화 검증(디바이스 타입) | ⬜ | 🎬 조연 | — |
-| **M4** | 실시간 푸시·최신 캐시·인증 | ⬜ | 🦴 읽기(+조연) | Redis |
-| **M5** | 도달/이탈 판정(geofence) | ⬜ | 🎬 조연 | (Redis Stream `geofence` CG 재사용) |
-| **M6** | 민감정보 보호·보존 | ⬜ | 🎬 조연 | — |
-| **M7** | 대용량 조회·복제 | ⬜ | 🦴 읽기 | MySQL 읽기복제 |
-| **M8** | 컨테이너·k8s | ⬜ | 🎬 조연 | (앱 컨테이너화) |
-| **M9~M11** | 페이즈2(다운링크/미션) | ⏸ | — | — |
+| **M0** | 모델·수집·조회·시뮬레이터·측정 | ✅ (`m0` 태그) | Java·REST | MySQL |
+| **M1** | 적재 포화점 높이기(fsync 분할) | ✅ (배치로 ~44×) | 성능 | — |
+| **M2** | **TimescaleDB 전환**(순차 저장) | 🔄 다음 | ★PostgreSQL+시계열 | TimescaleDB |
+| **M4** | **실시간: Redis 캐시 + WebSocket** | ⬜ | ★WebSocket | Redis |
+| **M-MQTT** | **MQTT 수집 경로** | ⬜ | ★브로커 | MQTT broker |
+| **M3** | 추상화 검증(디바이스 타입) | ⬜ | 설계 | — |
+| **M5** | 도달/이탈 판정(geofence) | ⬜ | — | (Redis Stream CG) |
+| **M6** | 민감정보 보호·보존 | ⬜ | — | (TimescaleDB retention) |
+| **M7** | 대용량 조회·복제 | ⬜ | — | (TimescaleDB 하이퍼테이블) |
+| **M8** | 컨테이너·**k8s** | ⬜ | 우대 | (앱 컨테이너화) |
+| **M9~M11** | 페이즈2(다운링크/미션) | ⏸ | 정합성 | — |
 
 ---
 

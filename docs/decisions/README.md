@@ -10,7 +10,8 @@
 | [0004](0004-ports-only-at-improvement-seams.md) | 포트 사용 범위 | 헥사고날 포트를 **개선 이음새에만** 외과적으로 차용 |
 | [0005](0005-simulator-in-app-with-profile.md) | 시뮬레이터 위치 | 같은 앱 + `simulator` 프로파일 (별도 모듈 기각) |
 | [0006](0006-package-base-name.md) | 패키지 베이스 | `com.thdwjdrl.locus` |
-| [0007](0007-messaging-storage-redis-streams-and-governance.md) | 메시징/저장 | fan-out 브로커 **Redis Streams**(Kafka 아님) + **DeviceType별 보존·도달범위** + 운영/도메인 **리플레이 2종** |
+| [0007](0007-messaging-storage-redis-streams-and-governance.md) | 메시징/저장 | fan-out 브로커 **Redis Streams**(Kafka 아님) + **DeviceType별 보존·도달범위** + 리플레이 2종 + **MQTT 수집 전송** |
+| [0008](0008-telemetry-store-timescaledb.md) | 텔레메트리 저장소 | MySQL B-tree(랜덤 fsync) → **TimescaleDB**(순차 쓰기) — M1 측정이 트리거, M6 보존·M7 파티셔닝 흡수 |
 
 ## 구조 ↔ 결정 매핑은 별도 문서
 - 패키지 트리의 각 부분이 어느 결정·마일스톤에서 나왔는지: [../STRUCTURE.md](../STRUCTURE.md)
