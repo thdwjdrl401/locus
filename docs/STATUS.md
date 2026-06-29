@@ -10,10 +10,10 @@
 
 | | |
 |---|---|
-| **한 줄** | **M1 A1 완료(2026-06-29)**: flush 1→2로 포화점 **33→66 (~2×)**, fsync가 병목임을 인과로 증명. 다음은 **A2 코딩**(내구성 유지하며 같은 효과). |
-| **방금 끝낸 것** | A1 측정: log fsync/req 1.0→0.05, 포화점 2배. flush=1 복귀. → [`M1.md`](measurements/M1.md) 기록 + 원본 `M1-raw/`. |
-| **다음 한 걸음** | **A2 구현**: `TelemetryIngestPort` 도입 + 인메모리 큐 + 배치 flush 워커(`saveAll` 한 tx), `rewriteBatchedStatements=true`. 그 후 A2/A3/A2-x 측정. |
-| **메모** | A1은 내구성 포기(정전 시 ~1s 손실) 진단용. 최종은 A2(배치, 내구성 유지). |
+| **한 줄** | **M1 A2 구현 완료(2026-06-29)**: 인메모리 큐+배치 워커(`TelemetryIngestPort`, ADR 0004). direct 기본·queue 측정용. 전체 green. 다음은 **A2/A3/A2-x 측정**(집). |
+| **방금 끝낸 것** | A2 코드: 포트+큐+워커+배치DAO(JdbcTemplate INSERT IGNORE + device upsert), 메트릭, 큐모드 통합테스트. 내구성 유지(flush=1). |
+| **다음 한 걸음** | 집·박스: `INGEST_MODE=queue`로 앱 띄워 capacity 측정 → batch-size 스윕, A3(flush=2)·A2-x(device-upsert=false) → [`M1.md`](measurements/M1.md) 표 채우기. |
+| **메모** | A2 한계(앱 크래시 시 큐 유실·fan-out 불가)는 M4 Redis Streams 명분. 측정으로 드러낼 것. |
 
 ---
 
@@ -110,7 +110,8 @@ Device → POST → [M2 인메모리 큐+배치] → MySQL raw (원본 이력·�
 > **결정적 지표(smoking gun) = 요청당 fsync 횟수**(`Innodb_data_fsyncs` 델타 ÷ 요청 수) — 이게 줄며 천장 오르면 "병목=fsync" 인과 증명.
 - [x] 실험 *설계* 완료 (A0~A3·A2-x 비교군, 절차, 예상결과)
 - [x] **A1 측정** (flush=2): 포화점 33→**66**(~2×), log fsync/req 1.0→0.05 → **fsync 병목 인과 증명**. 원본 `M1-raw/`
-- [ ] 🔄 **A2 구현**(다음): 인메모리 큐 + 배치 워커 (HTTP 202 즉시 → 워커가 N건 한 tx로 `saveAll`); JDBC `rewriteBatchedStatements=true`, `TelemetryIngestPort` 도입(ADR 0004)
+- [x] **A2 구현 완료**: `TelemetryIngestPort`(ADR 0004) + 인메모리 큐(`QueuedIngestWriter`, drop+메트릭) + 배치 워커(`TelemetryBatchWorker`, SmartLifecycle) + `TelemetryBatchDao`(`JdbcTemplate.batchUpdate`, INSERT IGNORE + device 배치 upsert). `locus.ingest.mode=direct(기본)|queue`, `rewriteBatchedStatements=true`. spotlessCheck+단위+통합 green
+- [ ] 🚧 **A2/A3/A2-x 측정**(집): `mode=queue`로 batch-size·max-delay 스윕, flush=1(A2)/=2(A3)/device-upsert=false(A2-x). 포화점·요청당 fsync before/after
 - [ ] 🚧 A2 측정 — 앱 배치(크기/지연 변수) → "그냥 배치"만으로 어디까지(내구성 유지)
 - [ ] 🚧 A3 측정 — A2+flush=2 합산 상한
 - [ ] 🚧 A2-x 측정 — Device upsert 분리(핫패스 UPDATE 교란변수 격리)
