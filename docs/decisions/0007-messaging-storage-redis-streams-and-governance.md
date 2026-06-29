@@ -51,7 +51,7 @@ raw telemetry 테이블 ──▶ [운영 리플레이 원천] (모든 DeviceTyp
 - fan-out·디커플링 이득은 Redis Streams Consumer Group으로 **이미 확보**(이득 중복).
 - 처리량 천장은 **싱크(MySQL 배치 insert)** 가 정하지 브로커가 아니다([M1](../measurements/M1.md)) → Kafka로 천장이 오르지 않음.
 - Kafka 고유 가치(대용량 보존·로그 리플레이·다수 파티션 병렬)는 **이 규모에서 회수 안 됨** + 운영·메모리 비용만.
-- → **지금은 Redis Streams, Kafka는 "Streams를 못 버틸 때"의 측정-게이트 전환 대상.** (프로젝트: "텔레메트리=Kafka" 반사 대신 의도적 선택 + 전환 기준을 말할 수 있는 게 핵심.)
+- → **지금은 Redis Streams, Kafka는 "Streams를 못 버틸 때"의 측정-게이트 전환 대상.** ("텔레메트리=Kafka" 반사 대신 의도적 선택 + 전환 기준을 측정으로 제시하는 게 핵심.)
 
 ## 수집 전송 — MQTT 추가 (2026-06-30, 계층 구분 명확화)
 > **MQTT(수집 전송) ≠ Redis Streams(내부 fan-out 브로커).** 다른 계층이라 공존한다.

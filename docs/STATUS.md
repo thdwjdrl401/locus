@@ -6,24 +6,24 @@
 
 ---
 
-## 🎯 현재 포커스 — 방향 + M2 TimescaleDB 전환
+## 🎯 현재 포커스 — M2 TimescaleDB 전환
 
 | | |
 |---|---|
-| **한 줄** | **방향 전환(2026-06-30)**: 도메인(디지털트윈/IoT 시계열, 예: )에 맞춰 로드맵 재정렬. M1(1,437)이 디스크 병목 측정 근거 → **다음 = M2 TimescaleDB 전환**(순차 저장 = PostgreSQL필수+시계열우대+병목 해결). |
+| **한 줄** | **방향 전환(2026-06-30)**: 도메인 포지셔닝(IoT 시계열 파이프라인)에 맞춰 로드맵 재정렬. M1(1,437)이 디스크 병목 측정 근거 → **다음 = M2 TimescaleDB 전환**(순차 저장 = PostgreSQL + 시계열 + 병목 해결). |
 | **방금 끝낸 것** | M1 측정 완결(배치로 33→1,437, ~44×). 방향 결정 + 문서 반영(ADR 0008 신규·0007 보강·ROADMAP SLO). |
 | **다음 한 걸음** | M2 TimescaleDB 전환 착수: 영속 계층 이식 + 적재 포화점 재측정(before=MySQL 1,437). 또는 빠른 필수승리 WebSocket(M4) 먼저. |
 | **메모** | GC 튜닝 폐기(I/O 바운드라 비병목, 측정 근거). SLO: 업링크 10k·조회 1만·다운링크 ~500. 측정 정체성 유지(키워드 아닌 측정 정당화). |
 
 ---
 
-## 🧭 포지셔닝 (2026-06-30 방향으로 갱신)
+## 🧭 포지셔닝 (2026-06-30 도메인 포지셔닝으로 갱신)
 
-**전략: 디지털트윈/IoT 시계열 직군 포지셔닝** + 측정 주도 정체성 유지. 상세 SLO·역량 매핑은 [ROADMAP §목표 SLO](ROADMAP.md).
+**도메인: IoT/센서 텔레메트리 시계열 파이프라인** + 측정 주도 정체성 유지. 상세 SLO는 [ROADMAP §목표 SLO](ROADMAP.md).
 
-- **🦴 척추(깊게, 핵심):** 적재 성능(M0→M1→**M2 TimescaleDB**) · 실시간(**M4 Redis+WebSocket**) · 수집 프로토콜(**M-MQTT**)
-- **🎬 조연/우대:** M3 추상화 · M5 지오펜스 · M6 보안 · **M8 k8s(우대)** · 페이즈2 정합성
-- **폐기:** GC/메모리 튜닝(I/O 바운드라 비병목 — 측정 근거, 도메인에도 없음)
+- **🦴 척추(깊게):** 적재 성능(M0→M1→**M2 TimescaleDB**) · 실시간(**M4 Redis+WebSocket**) · 수집 프로토콜(**M-MQTT**)
+- **🎬 조연:** M3 추상화 · M5 지오펜스 · M6 보안 · **M8 k8s** · 페이즈2 정합성
+- **다루지 않음:** GC/메모리 튜닝(I/O 바운드라 비병목 — 측정 근거)
 
 **목표 데이터 흐름(북극성) ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)·[0008](decisions/0008-telemetry-store-timescaledb.md)):**
 ```
@@ -40,13 +40,13 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 
 | 날짜 | 결정 | 어디에 |
 |---|---|---|
-| 2026-06-28 | **프로젝트 우선 · 성능 헤드라인**(쓰기/읽기 두 경로 척추, 나머지 조연) | 이 문서 §포지셔닝 |
+| 2026-06-28 | **성능 헤드라인 우선**(쓰기/읽기 두 경로 척추, 나머지 조연) | 이 문서 §포지셔닝 |
 | 2026-06-28 | **M1 = fsync 분할 실험**(배치 insert·flush 설정·그룹 커밋, smoking gun=fsync/req) | [`M1.md`](measurements/M1.md) |
 | 2026-06-28 | **M2 = 인메모리 큐 배치**(외부 브로커 0). 천장은 싱크가 올린다, 큐 아님 | ROADMAP 매핑표 |
 | 2026-06-28 | **메시징/저장 아키텍처 확정**: fan-out 브로커=**Redis Streams**(Kafka 아님) · DeviceType별 보존·도달범위 · 리플레이 2종(운영/도메인) · 폰 장기경로 구조상 없음 | **[ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)** |
 | 2026-06-28 | Kafka는 **Redis Streams 못 버틸 때**의 측정-게이트 전환(사다리 ③) | [ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md) |
 | 2026-06-29 | **STATUS 하네스 기계화** — pre-commit 훅이 실질 변경 시 STATUS 동반 갱신 강제 | `.githooks/pre-commit`, CLAUDE §7, build.gradle.kts |
-| 2026-06-30 | **방향**(디지털트윈/IoT 시계열). 로드맵 재정렬, GC 튜닝 폐기(비병목), 목표 SLO 명시 | [ROADMAP §SLO](ROADMAP.md) |
+| 2026-06-30 | **도메인 포지셔닝**(IoT/센서 시계열 파이프라인). 로드맵 재정렬, GC 튜닝 제외(비병목), 목표 SLO 명시 | [ROADMAP §SLO](ROADMAP.md) |
 | 2026-06-30 | **텔레메트리 저장소 TimescaleDB 전환** — M1 디스크 병목이 트리거. 순차 저장=PostgreSQL+시계열+병목 해결 | **[ADR 0008](decisions/0008-telemetry-store-timescaledb.md)** |
 | 2026-06-30 | **MQTT 수집 추가**(IoT 표준 전송). Redis Streams(fan-out)와 다른 계층, 공존. Kafka는 보류 유지 | [ADR 0007 §MQTT](decisions/0007-messaging-storage-redis-streams-and-governance.md) |
 
@@ -54,18 +54,18 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 
 ## 📋 마일스톤 보드 (한눈에)
 
-| M | 주제 | 상태 | JD | 추가 인프라 |
+| M | 주제 | 상태 | 핵심 기술 | 추가 인프라 |
 |---|---|---|---|---|
 | **M0** | 모델·수집·조회·시뮬레이터·측정 | ✅ (`m0` 태그) | Java·REST | MySQL |
-| **M1** | 적재 포화점 높이기(fsync 분할) | ✅ (배치로 ~44×) | 성능 | — |
-| **M2** | **TimescaleDB 전환**(순차 저장) | 🔄 다음 | ★PostgreSQL+시계열 | TimescaleDB |
-| **M4** | **실시간: Redis 캐시 + WebSocket** | ⬜ | ★WebSocket | Redis |
-| **M-MQTT** | **MQTT 수집 경로** | ⬜ | ★브로커 | MQTT broker |
+| **M1** | 적재 포화점 높이기(fsync 분할) | ✅ (배치로 ~44×) | 성능 측정 | — |
+| **M2** | **TimescaleDB 전환**(순차 저장) | 🔄 다음 | PostgreSQL·시계열 | TimescaleDB |
+| **M4** | **실시간: Redis 캐시 + WebSocket** | ⬜ | WebSocket | Redis |
+| **M-MQTT** | **MQTT 수집 경로** | ⬜ | MQTT | MQTT broker |
 | **M3** | 추상화 검증(디바이스 타입) | ⬜ | 설계 | — |
 | **M5** | 도달/이탈 판정(geofence) | ⬜ | — | (Redis Stream CG) |
 | **M6** | 민감정보 보호·보존 | ⬜ | — | (TimescaleDB retention) |
 | **M7** | 대용량 조회·복제 | ⬜ | — | (TimescaleDB 하이퍼테이블) |
-| **M8** | 컨테이너·**k8s** | ⬜ | 우대 | (앱 컨테이너화) |
+| **M8** | 컨테이너·**k8s** | ⬜ | k8s | (앱 컨테이너화) |
 | **M9~M11** | 페이즈2(다운링크/미션) | ⏸ | 정합성 | — |
 
 ---
