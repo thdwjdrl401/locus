@@ -10,10 +10,10 @@
 
 | | |
 |---|---|
-| **한 줄** | **M1 A2 구현 완료(2026-06-29)**: 인메모리 큐+배치 워커(`TelemetryIngestPort`, ADR 0004). direct 기본·queue 측정용. 전체 green. 다음은 **A2/A3/A2-x 측정**(집). |
-| **방금 끝낸 것** | A2 코드: 포트+큐+워커+배치DAO(JdbcTemplate INSERT IGNORE + device upsert), 메트릭, 큐모드 통합테스트. 내구성 유지(flush=1). |
-| **다음 한 걸음** | 집·박스: `INGEST_MODE=queue`로 앱 띄워 capacity 측정 → batch-size 스윕, A3(flush=2)·A2-x(device-upsert=false) → [`M1.md`](measurements/M1.md) 표 채우기. |
-| **메모** | A2 한계(앱 크래시 시 큐 유실·fan-out 불가)는 M4 Redis Streams 명분. 측정으로 드러낼 것. |
+| **한 줄** | **M1 A2 측정 완료(2026-06-29)**: 배치로 적재 포화점 **33→~1,437 req/s (~44×), 내구성 유지**(flush=1). M1 핵심 결론 확보. 남은 건 A3·A2-x. |
+| **방금 끝낸 것** | A2 측정 3런 → 포화점 ~1,437(드롭·큐만석·처리량평탄 동시). fsync/req 1.2→0.059. [`M1.md`](measurements/M1.md) 기록 + 원본 `M1-raw/`. |
+| **다음 한 걸음** | 집·박스: A3(`SET GLOBAL flush=2` + queue) / A2-x(`INGEST_DEVICE_UPSERT=false`) 측정 → M1.md 표 마무리 → `m1` 태그 검토. |
+| **메모** | A2 포화점에서 CPU 처음 ~0.10(병목 이동 조짐). A2 한계(앱 크래시 시 큐·드롭 유실)는 M4 Redis Streams 명분. |
 
 ---
 
@@ -110,8 +110,9 @@ Device → POST → [M2 인메모리 큐+배치] → MySQL raw (원본 이력·�
 > **결정적 지표(smoking gun) = 요청당 fsync 횟수**(`Innodb_data_fsyncs` 델타 ÷ 요청 수) — 이게 줄며 천장 오르면 "병목=fsync" 인과 증명.
 - [x] 실험 *설계* 완료 (A0~A3·A2-x 비교군, 절차, 예상결과)
 - [x] **A1 측정** (flush=2): 포화점 33→**66**(~2×), log fsync/req 1.0→0.05 → **fsync 병목 인과 증명**. 원본 `M1-raw/`
-- [x] **A2 구현 완료**: `TelemetryIngestPort`(ADR 0004) + 인메모리 큐(`QueuedIngestWriter`, drop+메트릭) + 배치 워커(`TelemetryBatchWorker`, SmartLifecycle) + `TelemetryBatchDao`(`JdbcTemplate.batchUpdate`, INSERT IGNORE + device 배치 upsert). `locus.ingest.mode=direct(기본)|queue`, `rewriteBatchedStatements=true`. spotlessCheck+단위+통합 green
-- [ ] 🚧 **A2/A3/A2-x 측정**(집): `mode=queue`로 batch-size·max-delay 스윕, flush=1(A2)/=2(A3)/device-upsert=false(A2-x). 포화점·요청당 fsync before/after
+- [x] **A2 구현 완료**: `TelemetryIngestPort`(ADR 0004) + 인메모리 큐 + 배치 워커(SmartLifecycle) + `TelemetryBatchDao`(`JdbcTemplate.batchUpdate`). `mode=direct(기본)|queue`. green
+- [x] **A2 측정**: 포화점 **~1,437 req/s (A0 대비 ~44×)**, 내구성 유지(flush=1). data fsync/req 1.2→0.059. 3런(A2/A2b/A2c)으로 포화점 핀(드롭 78,031·큐 만석·처리량 평탄 동시). 원본 `M1-raw/`
+- [ ] 🚧 **A3·A2-x 측정**(집): A3=A2+flush=2 / A2-x=device-upsert=false
 - [ ] 🚧 A2 측정 — 앱 배치(크기/지연 변수) → "그냥 배치"만으로 어디까지(내구성 유지)
 - [ ] 🚧 A3 측정 — A2+flush=2 합산 상한
 - [ ] 🚧 A2-x 측정 — Device upsert 분리(핫패스 UPDATE 교란변수 격리)
