@@ -58,5 +58,17 @@ Measurements: docs/measurements/M2.md
   - 보안 이유: Lombok `@Data`의 자동 `toString`이 위치 평문을 흘릴 수 있어, 민감 필드는 직렬화·로그를 직접 통제한다(M6).
 - 포매터: **Spotless + google-java-format(AOSP, 4-space)**. CI가 `spotlessCheck`로 강제. 로컬은 `./gradlew spotlessApply`.
 
-## 7. main green 보증
+## 7. 문서 작성 — 업계 표준 용어
+- **임의 표현·비유를 만들지 않는다.** 개념은 그 분야에서 통용되는 표준 용어로 쓴다(처음 읽는 사람도, ·협업에서도 그대로 통하게).
+- **표준 용어 매핑 (이 프로젝트에서 합의):**
+  | 쓰지 말 것 | 표준 용어 |
+  |---|---|
+  | 천장 / ceiling | **최대 처리량** (maximum throughput) |
+  | knee (그래프 무릎) | **포화점** (saturation point) |
+  | ~ 바운드 (disk-bound 등) | **~이 병목** / 병목(bottleneck) |
+  | "산수로 닫힌다" 류 | **계산으로 설명된다 / 검산** |
+- 영어 약어·지표(`p95`, `fsync`, `%util`, throughput)는 그대로 쓰되, **새 개념의 첫 등장 시 한글(영어) 병기**.
+- 비유("배수구·양동이" 등)는 설명 대화엔 쓰더라도 **문서에는 남기지 않는다.**
+
+## 8. main green 보증
 - CI(`.github/workflows/ci.yml`): push/PR마다 `spotlessCheck` + `test`(ArchUnit 포함) + gitleaks(비밀 스캔).

@@ -1,0 +1,141 @@
+M0 k6 원본 출력 (2026-06-29)
+================================================================
+타깃: http://192.168.219.124:8093  (유선 LAN, RTT avg 0.81ms)
+스크립트: load/telemetry-capacity.js (열린 모델) / load/telemetry-baseline.js (닫힌 모델)
+요약·해석은 ../M0.md 참조. 이 파일은 가공 전 k6 stdout 원본.
+
+
+================================================================
+[capacity 런 A]  RATES=20,30,35,40,50,70   (포화점 한참 초과)
+================================================================
+  scenarios: (100.00%) 1 scenario, 2000 max VUs, 4m40s max duration:
+           * devices_1hz: Up to 70.00 iterations/s for 4m10s over 13 stages (maxVUs: 100-2000)
+
+  THRESHOLDS
+    http_req_duration  ✗ 'p(95)<1000' p(95)=30.8s
+    http_req_failed    ✓ 'rate<0.01'  rate=0.09%
+
+  TOTAL RESULTS
+    checks_succeeded...: 99.90% 8653 out of 8661
+    status is 202      ↳ 99% — ✓ 8653 / ✗ 8
+    http_req_duration..: avg=11.71s min=148.1ms med=9.62s max=47.18s p(90)=27.16s p(95)=30.8s
+    http_req_failed....: 0.09%  8 out of 8661
+    http_reqs..........: 8661   31.010164/s
+    dropped_iterations.: 1138   4.074537/s
+    vus................: 17     min=0  max=1235
+    vus_max............: 1237   min=100  max=1237
+
+
+================================================================
+[capacity 런 B]  RATES=28,31,33,35,38   (A 직후, 미정착)
+================================================================
+  scenarios: 1 scenario, 2000 max VUs, 4m0s max duration:
+           * devices_1hz: Up to 38.00 iterations/s for 3m30s over 11 stages
+
+  THRESHOLDS
+    http_req_duration  ✗ 'p(95)<1000' p(95)=8.36s
+    http_req_failed    ✓ 'rate<0.01'  rate=0.00%
+
+  TOTAL RESULTS
+    checks_succeeded...: 100.00% 6394 out of 6394
+    status is 202      ✓
+    http_req_duration..: avg=1.88s min=79.59ms med=443.25ms max=27.34s p(90)=6.02s p(95)=8.36s
+    http_req_failed....: 0.00%  0 out of 6394
+    http_reqs..........: 6394   29.974929/s
+    dropped_iterations.: 205    0.961035/s
+    vus................: 12     min=0  max=297
+    vus_max............: 305    min=100  max=305
+
+
+================================================================
+[capacity 런 C]  RATES=28,31,33,35,38   (정착, 평균이 한계 아래)
+================================================================
+  scenarios: 1 scenario, 2000 max VUs, 4m0s max duration:
+           * devices_1hz: Up to 38.00 iterations/s for 3m30s over 11 stages
+
+  THRESHOLDS
+    http_req_duration  ✓ 'p(95)<1000' p(95)=958.68ms
+    http_req_failed    ✓ 'rate<0.01'  rate=0.00%
+
+  TOTAL RESULTS
+    checks_succeeded...: 100.00% 6599 out of 6599
+    status is 202      ✓
+    http_req_duration..: avg=451.06ms min=77.99ms med=388.15ms max=1.72s p(90)=806.13ms p(95)=958.68ms
+    http_req_failed....: 0.00%  0 out of 6599
+    http_reqs..........: 6599   31.423903/s
+    dropped_iterations.: (없음 — 0)
+    vus................: 0      min=0  max=38
+    vus_max............: 100    min=100  max=100
+
+
+================================================================
+[capacity 런 D]  RATES=33,35,37,39   (한계 초과 주행 + iostat 캡처 → iostat-runD.log)
+================================================================
+  scenarios: 1 scenario, 2000 max VUs, 3m20s max duration:
+           * devices_1hz: Up to 39.00 iterations/s for 2m50s over 9 stages
+
+  THRESHOLDS
+    http_req_duration  ✗ 'p(95)<1000' p(95)=6.74s
+    http_req_failed    ✓ 'rate<0.01'  rate=0.00%
+
+  TOTAL RESULTS
+    checks_succeeded...: 100.00% 5640 out of 5640
+    status is 202      ✓
+    http_req_duration..: avg=3.03s min=74.16ms med=2.8s max=22.48s p(90)=5.48s p(95)=6.74s
+    http_req_failed....: 0.00%  0 out of 5640
+    http_reqs..........: 5640   33.176458/s
+    dropped_iterations.: 119    0.7/s
+    vus................: 0      min=0  max=213
+    vus_max............: 219    min=100  max=219
+
+
+================================================================
+[baseline 런 1]  닫힌 모델 50 VU 2분
+================================================================
+  scenarios: 1 scenario, 50 max VUs, 2m30s max duration:
+           * default: Up to 50 looping VUs for 2m0s over 3 stages
+
+  THRESHOLDS
+    http_req_duration  ✗ 'p(95)<500' p(95)=1.7s
+    http_req_failed    ✓ 'rate<0.01' rate=0.00%
+
+  TOTAL RESULTS
+    checks_succeeded...: 100.00% 4363 out of 4363
+    http_req_duration..: avg=1.03s min=77.73ms med=1.14s max=2.95s p(90)=1.56s p(95)=1.7s
+    http_req_failed....: 0.00%  0 out of 4363
+    http_reqs..........: 4363   36.314385/s
+    vus_max............: 50
+
+
+================================================================
+[baseline 런 2]  닫힌 모델 50 VU 2분
+================================================================
+  THRESHOLDS
+    http_req_duration  ✗ 'p(95)<500' p(95)=1.63s
+    http_req_failed    ✓ 'rate<0.01' rate=0.00%
+
+  TOTAL RESULTS
+    checks_succeeded...: 100.00% 4383 out of 4383
+    http_req_duration..: avg=1.03s min=109.23ms med=1.11s max=2.69s p(90)=1.52s p(95)=1.63s
+    http_req_failed....: 0.00%  0 out of 4383
+    http_reqs..........: 4383   36.484521/s
+    vus_max............: 50
+
+
+================================================================
+[baseline 런 3]  닫힌 모델 50 VU 2분
+================================================================
+  THRESHOLDS
+    http_req_duration  ✗ 'p(95)<500' p(95)=1.6s
+    http_req_failed    ✓ 'rate<0.01' rate=0.00%
+
+  TOTAL RESULTS
+    checks_succeeded...: 100.00% 4564 out of 4564
+    http_req_duration..: avg=993.02ms min=103.02ms med=1.05s max=2.83s p(90)=1.47s p(95)=1.6s
+    http_req_failed....: 0.00%  0 out of 4564
+    http_reqs..........: 4564   38.021934/s
+    vus_max............: 50
+
+================================================================
+baseline 3회 중앙값: 처리량 36.5 req/s, p95 1.63s
+(참고: 2026-06-21 1회차 빈 DB = 32.9 req/s, p95 1.92s)
