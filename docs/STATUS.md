@@ -10,10 +10,10 @@
 
 | | |
 |---|---|
-| **한 줄** | **M0 완료·태그됨**(`m0`, knee≈33, HDD fsync 바운드). 지금 **M1 A1** 착수: `innodb_flush_log_at_trx_commit` 1→2로 "fsync 줄이면 처리량 오른다" 측정. |
-| **방금 끝낸 것** | M0 문서 가독성 개선 + 원본 데이터 보관(`M0-raw/`) + 표준 용어 규칙 → 커밋 `85170d5`, `m0` 태그 재지정(미푸시). |
-| **다음 한 걸음** | A1 측정(집·박스): A0 fsync 스냅 → k6 → `SET GLOBAL ...=2` → k6 → `=1` 복귀 → [`M1.md`](measurements/M1.md) A1 행 기록. 핵심 지표 = 요청당 fsync. |
-| **A1 이후** | A2 코딩(인메모리 큐+배치, `TelemetryIngestPort` 도입) — 별도 작업으로 분리. |
+| **한 줄** | **M1 A1 완료(2026-06-29)**: flush 1→2로 포화점 **33→66 (~2×)**, fsync가 병목임을 인과로 증명. 다음은 **A2 코딩**(내구성 유지하며 같은 효과). |
+| **방금 끝낸 것** | A1 측정: log fsync/req 1.0→0.05, 포화점 2배. flush=1 복귀. → [`M1.md`](measurements/M1.md) 기록 + 원본 `M1-raw/`. |
+| **다음 한 걸음** | **A2 구현**: `TelemetryIngestPort` 도입 + 인메모리 큐 + 배치 flush 워커(`saveAll` 한 tx), `rewriteBatchedStatements=true`. 그 후 A2/A3/A2-x 측정. |
+| **메모** | A1은 내구성 포기(정전 시 ~1s 손실) 진단용. 최종은 A2(배치, 내구성 유지). |
 
 ---
 
@@ -109,8 +109,8 @@ Device → POST → [M2 인메모리 큐+배치] → MySQL raw (원본 이력·�
 > 설계 완료 → [`measurements/M1.md`](measurements/M1.md). M0 병목(`단건 insert + 커밋당 fsync → ~33 req/s`)을 **MySQL 안에서 먼저** 짜낸다. Kafka 없음.
 > **결정적 지표(smoking gun) = 요청당 fsync 횟수**(`Innodb_data_fsyncs` 델타 ÷ 요청 수) — 이게 줄며 천장 오르면 "병목=fsync" 인과 증명.
 - [x] 실험 *설계* 완료 (A0~A3·A2-x 비교군, 절차, 예상결과)
-- [ ] 🔄 **A1 측정**(진행 중) — A0 재확인 → `SET GLOBAL innodb_flush_log_at_trx_commit=2` → 재측정 → `=1` 복귀. 요청당 fsync로 인과 증명
-- [ ] ⬜ **A2 구현**: 인메모리 큐 + 배치 워커 (HTTP 202 즉시 → 워커가 N건 한 tx로 `saveAll`); JDBC `rewriteBatchedStatements=true`, `TelemetryIngestPort` 도입
+- [x] **A1 측정** (flush=2): 포화점 33→**66**(~2×), log fsync/req 1.0→0.05 → **fsync 병목 인과 증명**. 원본 `M1-raw/`
+- [ ] 🔄 **A2 구현**(다음): 인메모리 큐 + 배치 워커 (HTTP 202 즉시 → 워커가 N건 한 tx로 `saveAll`); JDBC `rewriteBatchedStatements=true`, `TelemetryIngestPort` 도입(ADR 0004)
 - [ ] 🚧 A2 측정 — 앱 배치(크기/지연 변수) → "그냥 배치"만으로 어디까지(내구성 유지)
 - [ ] 🚧 A3 측정 — A2+flush=2 합산 상한
 - [ ] 🚧 A2-x 측정 — Device upsert 분리(핫패스 UPDATE 교란변수 격리)
