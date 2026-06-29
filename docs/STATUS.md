@@ -6,14 +6,14 @@
 
 ---
 
-## 🎯 현재 포커스 — M0 마무리(측정)
+## 🎯 현재 포커스 — M1 A1 설정 실험
 
 | | |
 |---|---|
-| **한 줄** | 수직 슬라이스 닫힘 + **M0 측정·병목 확증 완료(2026-06-29)**: knee≈33, HDD fsync 바운드(산수로 닫힘). 남은 건 **보강 → `m0` 태그 → M1 착수**. |
-| **방금 끝낸 것** | capacity knee≈33(4회 런 일관) + iostat 194샘플 평균(%util 97·f/s 39·f_await 25ms) 3중 확증 → [`M0.md`](measurements/M0.md) 기록. |
-| **다음 한 걸음** | ① M0 보강(닫힌 baseline 3회 중앙값·RTT·Grafana 스크린샷) → `m0` 태그, **또는** ② **M1 코딩 착수**(인메모리 큐+배치, 설계=[`M1.md`](measurements/M1.md)) — 측정만 집에서. |
-| **막힌 동안 할 수 있는 것(집 불필요)** | M1 코딩 · M3 둘째 핸들러(core diff 0줄) · 설계/문서. |
+| **한 줄** | **M0 완료·태그됨**(`m0`, knee≈33, HDD fsync 바운드). 지금 **M1 A1** 착수: `innodb_flush_log_at_trx_commit` 1→2로 "fsync 줄이면 처리량 오른다" 측정. |
+| **방금 끝낸 것** | M0 문서 가독성 개선 + 원본 데이터 보관(`M0-raw/`) + 표준 용어 규칙 → 커밋 `85170d5`, `m0` 태그 재지정(미푸시). |
+| **다음 한 걸음** | A1 측정(집·박스): A0 fsync 스냅 → k6 → `SET GLOBAL ...=2` → k6 → `=1` 복귀 → [`M1.md`](measurements/M1.md) A1 행 기록. 핵심 지표 = 요청당 fsync. |
+| **A1 이후** | A2 코딩(인메모리 큐+배치, `TelemetryIngestPort` 도입) — 별도 작업으로 분리. |
 
 ---
 
@@ -49,6 +49,7 @@ Device → POST → [M2 인메모리 큐+배치] → MySQL raw (원본 이력·�
 | 2026-06-28 | **M2 = 인메모리 큐 배치**(외부 브로커 0). 천장은 싱크가 올린다, 큐 아님 | ROADMAP 매핑표 |
 | 2026-06-28 | **메시징/저장 아키텍처 확정**: fan-out 브로커=**Redis Streams**(Kafka 아님) · DeviceType별 보존·도달범위 · 리플레이 2종(운영/도메인) · 폰 장기경로 구조상 없음 | **[ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)** |
 | 2026-06-28 | Kafka는 **Redis Streams 못 버틸 때**의 측정-게이트 전환(사다리 ③) | [ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md) |
+| 2026-06-29 | **STATUS 하네스 기계화** — pre-commit 훅이 실질 변경 시 STATUS 동반 갱신 강제 | `.githooks/pre-commit`, CLAUDE §7, build.gradle.kts |
 
 ---
 
@@ -56,8 +57,8 @@ Device → POST → [M2 인메모리 큐+배치] → MySQL raw (원본 이력·�
 
 | M | 주제 | 상태 | 척추/조연 | 추가 인프라 |
 |---|---|---|---|---|
-| **M0** | 모델·수집·조회·시뮬레이터·측정 | 🔄 (측정만 남음) | 🦴 쓰기 | MySQL |
-| **M1** | 적재 천장 깨기(fsync 분할) | ⬜ (설계 완료) | 🦴 쓰기 | — |
+| **M0** | 모델·수집·조회·시뮬레이터·측정 | ✅ (`m0` 태그) | 🦴 쓰기 | MySQL |
+| **M1** | 적재 천장 깨기(fsync 분할) | 🔄 (A1 착수) | 🦴 쓰기 | — |
 | **M2** | 배치 적재(인메모리 큐) | ⬜ | 🦴 쓰기 | — |
 | **M3** | 추상화 검증(디바이스 타입) | ⬜ | 🎬 조연 | — |
 | **M4** | 실시간 푸시·최신 캐시·인증 | ⬜ | 🦴 읽기(+조연) | Redis |
@@ -69,7 +70,7 @@ Device → POST → [M2 인메모리 큐+배치] → MySQL raw (원본 이력·�
 
 ---
 
-## M0 — 모델·수집·조회·시뮬레이터·측정  🔄  🦴 쓰기경로 baseline
+## M0 — 모델·수집·조회·시뮬레이터·측정  ✅ (`m0` 태그)  🦴 쓰기경로 baseline
 ### 기반
 - [x] 프로젝트 스캐폴딩 (Gradle Kotlin DSL, Java 21, Spotless, **ArchUnit core 경계**, CI)
 - [x] ADR·STRUCTURE·ROADMAP·conventions·SECURITY 문서
@@ -99,18 +100,17 @@ Device → POST → [M2 인메모리 큐+배치] → MySQL raw (원본 이력·�
 - [x] 환경 보강: RTT avg 0.81ms, 시작 행수 34,987
 - [x] **capacity 측정** — knee **≈ 33** 1Hz 디바이스 (달성 처리량이 4회 런 모두 ~33으로 견고; 닫힌 32.9 포함). p95는 천장 위로 미느냐·정착에 따라 0.96s~30s 출렁 = 백로그 산물
 - [x] **병목 확증 = HDD fsync 3중 증거**: CPU 유휴(2~8%) + HikariCP pending + 디스크 %util 97%·f_await 25ms·f/s 39(iostat 194샘플 평균) → **천장 산수로 닫힘**(40 fsync/s ÷ ~1.2 fsync/req ≈ 33)
-- [x] [`measurements/M0.md`](measurements/M0.md) 수치·해석·스크린샷(`img/`) 기록 완성
-- [ ] 🔄 **커밋 + `m0` 태그** (M0 측정 상태 고정점)
+- [x] [`measurements/M0.md`](measurements/M0.md) 수치·해석·스크린샷(`img/`) 기록 완성 + 원본 데이터 `M0-raw/`
+- [x] **커밋 + `m0` 태그** (`9e3142b` 측정 + `85170d5` 문서정리, 태그 재지정. 미푸시)
 
 ---
 
-## M1 — 적재 천장 깨기: fsync 분할  ⬜  🦴 쓰기경로
+## M1 — 적재 천장 깨기: fsync 분할  🔄  🦴 쓰기경로
 > 설계 완료 → [`measurements/M1.md`](measurements/M1.md). M0 병목(`단건 insert + 커밋당 fsync → ~33 req/s`)을 **MySQL 안에서 먼저** 짜낸다. Kafka 없음.
 > **결정적 지표(smoking gun) = 요청당 fsync 횟수**(`Innodb_data_fsyncs` 델타 ÷ 요청 수) — 이게 줄며 천장 오르면 "병목=fsync" 인과 증명.
 - [x] 실험 *설계* 완료 (A0~A3·A2-x 비교군, 절차, 예상결과)
-- [ ] ⬜ **구현(집 불필요)**: 인메모리 큐 + 배치 워커 (HTTP 202 즉시 → 워커가 N건 한 tx로 `saveAll`); JDBC `rewriteBatchedStatements=true`
-- [ ] 🚧 A0(before) 측정 — M0 천장 재확인
-- [ ] 🚧 A1 측정 — `innodb_flush_log_at_trx_commit=2`(설정만) → 커밋당 fsync 비용 분리
+- [ ] 🔄 **A1 측정**(진행 중) — A0 재확인 → `SET GLOBAL innodb_flush_log_at_trx_commit=2` → 재측정 → `=1` 복귀. 요청당 fsync로 인과 증명
+- [ ] ⬜ **A2 구현**: 인메모리 큐 + 배치 워커 (HTTP 202 즉시 → 워커가 N건 한 tx로 `saveAll`); JDBC `rewriteBatchedStatements=true`, `TelemetryIngestPort` 도입
 - [ ] 🚧 A2 측정 — 앱 배치(크기/지연 변수) → "그냥 배치"만으로 어디까지(내구성 유지)
 - [ ] 🚧 A3 측정 — A2+flush=2 합산 상한
 - [ ] 🚧 A2-x 측정 — Device upsert 분리(핫패스 UPDATE 교란변수 격리)

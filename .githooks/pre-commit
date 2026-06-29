@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Locus STATUS 하네스 (CLAUDE.md §7)
+# 실질 변경(코드·측정·결정 등)이 스테이징됐는데 docs/STATUS.md는 아니면 커밋을 막는다.
+# "코드는 바뀌었는데 STATUS는 그대로"를 기계적으로 방지.
+# 정당한 예외(STATUS와 무관한 변경)는:  git commit --no-verify
+set -euo pipefail
+
+staged="$(git diff --cached --name-only --diff-filter=ACMR)"
+[ -z "$staged" ] && exit 0
+
+# STATUS가 이미 스테이징됐으면 통과
+if echo "$staged" | grep -qx "docs/STATUS.md"; then
+  exit 0
+fi
+
+# 실질 변경으로 간주하는 경로(이게 있으면 STATUS 갱신을 요구)
+substantive="$(echo "$staged" | grep -E '^(src/|docs/measurements/|docs/decisions/|load/|build\.gradle|settings\.gradle|docker-compose)' || true)"
+
+if [ -n "$substantive" ]; then
+  echo "──────────────────────────────────────────────────────────────"
+  echo "✋ STATUS 하네스 (CLAUDE.md §7): docs/STATUS.md 갱신이 빠졌습니다."
+  echo ""
+  echo "다음 실질 변경이 스테이징됐는데 STATUS.md는 함께 갱신되지 않았습니다:"
+  echo "$substantive" | sed 's/^/   - /'
+  echo ""
+  echo "→ docs/STATUS.md(체크박스·현재 포커스·결정 로그)를 갱신해 같은 커밋에 포함하세요."
+  echo "→ STATUS와 정말 무관한 변경이면:  git commit --no-verify"
+  echo "──────────────────────────────────────────────────────────────"
+  exit 1
+fi
+
+exit 0

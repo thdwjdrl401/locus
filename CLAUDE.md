@@ -103,3 +103,8 @@
 - **커밋과 동기화**: 기능·측정·결정을 담은 커밋은 **같은 커밋에 STATUS 갱신을 포함**한다. "코드는 바뀌었는데 STATUS는 그대로"를 만들지 않는다.
 - **측정**: STATUS엔 체크/한 줄 결과만, 상세 수치·해석은 `docs/measurements/Mx.md`.
 - **세션 시작 시**: STATUS의 "현재 포커스"부터 읽고 거기서 이어간다.
+
+**기계적 강제 — pre-commit 훅.** 위 "커밋과 동기화"를 사람 규율에만 맡기지 않는다.
+`.githooks/pre-commit`이 **실질 변경(`src/`·`docs/measurements/`·`docs/decisions/`·`load/`·`build.gradle`·`docker-compose`)이 스테이징됐는데 `docs/STATUS.md`는 아니면 커밋을 차단**한다. (`core.hooksPath=.githooks`는 `./gradlew`의 `installGitHooks`가 자동 설정 — 새 클론도 첫 빌드에 연결.)
+- STATUS와 정말 무관한 변경이면: `git commit --no-verify`.
+- 즉, **커밋하려다 막히면 STATUS부터 갱신하라는 신호**다.

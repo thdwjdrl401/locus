@@ -95,6 +95,16 @@ tasks.named("check") {
     dependsOn(testing.suites.named("integrationTest"))
 }
 
+// STATUS 하네스(CLAUDE.md §7): git hooksPath를 레포 추적 .githooks로 연결한다.
+// .githooks/pre-commit이 "실질 변경 스테이징 시 STATUS.md 동반 갱신"을 강제.
+// 새 클론에서도 첫 ./gradlew 빌드에 자동 설정된다(.git 없으면 건너뜀 — CI tarball 등).
+tasks.register<Exec>("installGitHooks") {
+    description = "git core.hooksPath를 .githooks로 설정 (STATUS 하네스)"
+    onlyIf { file(".git").exists() }
+    commandLine("git", "config", "core.hooksPath", ".githooks")
+}
+tasks.named("compileJava") { dependsOn("installGitHooks") }
+
 // 포매터: 코드 스타일 잡음 제거 + CI에서 spotlessCheck로 강제.
 // google-java-format AOSP 변형 = 4-space 들여쓰기.
 spotless {
