@@ -16,7 +16,7 @@
 
 | 마일스톤 | 포트 (위치) | 1차 구현 (baseline) | 2차 구현 (개선) |
 |---|---|---|---|
-| M2 | 수집 `TelemetryIngestPort` (`app.telemetry`) | `DirectSaveIngest` | `KafkaPublishIngest` |
+| M2 | 수집 `TelemetryIngestPort` (`app.telemetry`) | `DirectSaveIngest` | `InMemoryQueueIngest` → (fan-out 시) `RedisStreamIngest` ([0007](0007-messaging-storage-redis-streams-and-governance.md)) |
 | M4 | 최신상태 `LatestStateLookup` (`app.telemetry`/`device`) | `DbLatestStateLookup` | `RedisLatestStateLookup` |
 | M5 | 지오펜스 상태 `GeofenceStateStore` (`core.engine`가 정의, 구현은 `app`) | `InMemoryGeofenceStateStore` | `RedisGeofenceStateStore` |
 

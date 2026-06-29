@@ -25,7 +25,7 @@ locus/
 │       ├── telemetry/         수집·조회 (M0~). M2 수집 포트, M7 커서 페이징
 │       ├── device/            디바이스 조회 + PhoneHandler/PhoneProfile (M0~). M3 새 타입
 │       ├── simulator/         ← 결정 0005: 폰 시뮬레이터 (simulator 프로파일)
-│       ├── config/            인프라 설정 (M2 Kafka, M4 Redis ... 점증)
+│       ├── config/            인프라 설정 (M4 Redis 캐시+Streams ... 점증; M2는 인메모리 큐로 인프라 0)
 │       └── support/           횡단 관심사 (예외·응답·검증·로그마스킹)
 │
 ├── src/main/resources/

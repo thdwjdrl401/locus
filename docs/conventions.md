@@ -26,7 +26,7 @@
 ## 3. 마일스톤 태그
 - 마일스톤 완료 후 그 커밋에 태그를 단다. = **온프렘에서 측정한 코드 상태의 고정점.**
   ```
-  git tag -a m2 -m "M2: Kafka 분리 + JDBC 벌크 적재 (처리량 8.2x)"
+  git tag -a m2 -m "M2: 인메모리 큐 비동기 + JDBC 벌크 적재 (처리량 8.2x)"
   ```
 - 태그 주석엔 마일스톤 요약만. (외부 링크 안 넣음 — 아래 4 참조)
 
@@ -42,8 +42,8 @@
 ```
 perf(telemetry): 컨슈머 단건 save를 JDBC 벌크로 전환
 
-5,000 디바이스 유입에서 단건 insert가 적재 병목(DB CPU 95%, 컨슈머 랙 발산).
-@KafkaListener 배치 + JdbcTemplate.batchUpdate(500) + rewriteBatchedStatements로 전환.
+5,000 디바이스 유입에서 단건 insert가 적재 병목(fsync 바운드, 큐 적체 발산).
+인메모리 큐 배치 워커 + JdbcTemplate.batchUpdate(500) + rewriteBatchedStatements로 전환.
 
 적재 처리량 1,200→9,800 rows/s (8.2x), 배치 p95 410→41ms, 랙 수렴.
 

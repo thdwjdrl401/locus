@@ -7,11 +7,11 @@
 | M | 주제 | 주요 위치 | 추가 인프라 | 포트(0004) |
 |---|---|---|---|---|
 | **M0** | 모델·검증·시뮬레이터·측정 | `core.domain`, `app.telemetry`, `app.device`, `app.simulator` | MySQL | — |
-| **M1** | 부하·런타임 진단 | (코드 변경 적음) k6, JVM 옵션, HikariCP | — | — |
-| **M2** | 메시지 큐·배치 적재 | `app.telemetry`, `app.config(KafkaConfig)` | **Kafka** | 수집 `TelemetryIngestPort` |
+| **M1** | 적재 천장 깨기(fsync 분할) | `app.telemetry`(배치 적재), MySQL 설정, k6 | — | — |
+| **M2** | 배치 적재(인메모리 큐) | `app.telemetry`(배치 워커) | — (fan-out 브로커는 M4 Redis Streams, [ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)) | 수집 `TelemetryIngestPort` |
 | **M3** | 추상화 검증 | `app.device`(TagHandler/TagProfile), `core.strategy` enum | — | — |
-| **M4** | 실시간 푸시·최신상태 캐시 + **인증/식별** | `app.telemetry`/`device`, `app.auth`(신규), `app.user`(신규), `app.config(Redis/WebSocket)` | **Redis** | `LatestStateLookup` |
-| **M5** | 도달/이탈 판정 엔진 | `core.engine`, `app.geofence`(신규) | (상태저장 Redis 재사용) | `GeofenceStateStore` |
+| **M4** | 실시간 푸시·최신상태 캐시 + **인증/식별** | `app.telemetry`/`device`, `app.auth`(신규), `app.user`(신규), `app.config(Redis/WebSocket)` | **Redis** (캐시 **+ Streams 브로커** 겸용, [0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)) | `LatestStateLookup` |
+| **M5** | 도달/이탈 판정 엔진 | `core.engine`, `app.geofence`(신규) | (Redis 재사용 — Stream `geofence` Consumer Group) | `GeofenceStateStore` |
 | **M6** | 민감정보 보호 | `core.domain`(암호화 컬럼), `app.support`(마스킹), 스케줄러 | — | — |
 | **M7** | 대용량 조회·복제 | `app.telemetry`(커서), `app.config(라우팅DS)` | MySQL 읽기 복제 | — |
 | **M8** | 컨테이너·k8s | `Dockerfile`, k8s manifests | (앱 컨테이너화) | — |
@@ -45,5 +45,6 @@
 | `Device` enrollment 필드 | **M4** | M0엔 넣지 않는다(투기 금지). 인증 설계 때 컬럼 추가(`ddl-auto`로 비용 ≈ 0). |
 | 디바이스 **그루핑/스코핑** | **M4** | 관리자는 그룹 단위로 조회, super-admin은 역할로 전체. 모양은 `Group` 엔티티 + 멤버십(M:N 유력 — 한 디바이스를 여러 관리자/역할이 봄), `GET /api/devices`는 스코프 필터. **추가물이고 무거운 Telemetry 무관.** 정확한 모양(M:N vs 단일 FK)은 권한 규칙 정해지는 M4에 결정. |
 | Telemetry↔Device **FK 제약** | **M2** | M0는 FK 없이(deviceId 문자열, 앱 upsert가 정합성 유지). 벌크 적재에서 **FK 제약 ON/OFF 처리량을 측정**해 근거로 결정. 컬럼은 문자열 유지라 마이그레이션 비용 ≈ 0. |
+| **fan-out 브로커 + 보존·리플레이** | 사다리: M2 / M4~M5 / 페이즈2 ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md) 확정) | **천장은 싱크(배치 insert)지 큐가 아니다**(M1 측정·YAGNI §3.4) → 처리량용 브로커 도입 금지. **사다리**: ① M2 = **인메모리 큐 + 배치**(외부 브로커 0). ② 두 번째 소비자(M4 푸시/M5 지오펜스) 생기면 **fan-out 브로커 = Redis Streams**(Kafka 아님 — 같은 Redis가 캐시+Streams 두 일, 새 인프라 0). Stream=단기 버퍼(MAXLEN), 보존·리플레이는 영속 계층. ③ Kafka는 **Redis Streams를 못 버틸 때**의 측정-게이트 전환. • **리플레이 2종**(운영=raw/단기/전타입, 도메인=미션아카이브/장기/로봇만). • **DeviceType이 데이터 도달범위+보존을 가른다**: 폰=장기 경로 **구조상 없음**(정책 아닌 구조로 위치 보존 최소화). 상세 전부 ADR 0007. |
 | **CD 자동화** | (마일스톤 아님 — 선택) | **측정 척추 밖**(p95 불변이라 before/after 서사 없음). M8이 컨테이너 이미지+레지스트리로 **재료만** 제공한다. 원칙: **빌드는 박스 밖**(CI/맥), **박스는 실행만**(박스 빌드는 안티패턴). 필요(배포 빈도↑/프로젝트) 생기면 추가: **self-hosted 러너로 배포잡만**(집 NAT 인바운드 0) + **헬스체크·자동 롤백** + **하위호환 마이그레이션**(Flyway). 측정 중엔 자동배포가 수치를 깨니 **수동/태그 트리거** 권장. |
-| **텔레메트리 보존·저장소** | 보존=**M6**, 파티셔닝=**M7**; 저장소 교체는 측정 시 | 텔레메트리=시계열(append·불변, (device,time)범위·최신 조회). **MySQL 유지가 기본**(단순 우선) — 적재 병목은 fsync라 저장소를 바꿔도 안 풀림. • **보존은 필수 설계**: 미성년 위치 영구보관 금지(데이터 최소화 §3.5) → raw N일 + 오래된 건 삭제/다운샘플, recorded_at **시간 파티셔닝 drop**으로 삭제 ≈ 공짜(M7). • TSDB/컬럼스토어 전환은 "MySQL의 X 한계를 Y가 Z배 개선"이라는 **측정 근거 있을 때만**(조기 교체 금지). |
+| **텔레메트리 보존·저장소** | 보존=**M6**, 파티셔닝=**M7**; 저장소 교체는 측정 시 ([거버넌스 = ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)) | 텔레메트리=시계열(append·불변, (device,time)범위·최신 조회). **MySQL 유지가 기본**(단순 우선) — 적재 병목은 fsync라 저장소를 바꿔도 안 풀림. • **보존은 필수 설계**: 미성년 위치 영구보관 금지(데이터 최소화 §3.5) → raw N일 + 오래된 건 삭제/다운샘플, recorded_at **시간 파티셔닝 drop**으로 삭제 ≈ 공짜(M7). • **DeviceType이 보존·도달범위 축**(폰=장기경로 구조상 없음, 로봇=Mission Archive 장기) — ADR 0007. • raw TTL 수치·Mission Archive 저장소는 미해결(ADR 0007 §미해결). • TSDB/컬럼스토어 전환은 측정 근거 있을 때만(조기 교체 금지). |
