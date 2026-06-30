@@ -62,6 +62,8 @@ cp monitoring/prometheus.yml.example monitoring/prometheus.yml
 
 docker compose -f docker-compose.monitoring.yml up -d   # Prometheus+Grafana
 #  Grafana http://localhost:3000 에서 박스 메트릭 뜨는지 확인
+#  디스크 메트릭: 박스 docker-compose의 node-exporter(9100)를 Prometheus가 긁음(job_name: node).
+#  Prometheus http://localhost:9090/targets 에서 locus·node 둘 다 UP 확인.
 
 # 연결 확인
 curl -s http://박스IP:8093/actuator/prometheus | head
@@ -75,10 +77,10 @@ k6 run -e BASE_URL=http://박스IP:8093 load/telemetry-capacity.js   # 열린 �
 > **부하 모델 구분**
 > - *닫힌 모델*(VU 기반, baseline/stress): VU가 응답 받고 다음 요청 → **동시 연결 N개**를 잼.
 > - *열린 모델*(도착률 기반, capacity): 응답시간과 무관하게 **초당 N건 도착** → 1 req/s = 1Hz 디바이스 1대이므로 **target == 1Hz 디바이스 수**.
-> - **capacity 포화점**(= 지속 가능한 최대 1Hz 디바이스 수): 처리량이 target을 못 따라가거나(plateau≈최대 처리량) `dropped_iterations>0`·p95 급등하는 직전 단계. 라이브 출력의 VUs·dropped_iterations + Grafana(throughput/CPU/HikariCP) + 박스 `iostat -x 1`(디스크 %util)로 디스크가 병목임을 확증.
+> - **capacity 포화점**(= 지속 가능한 최대 1Hz 디바이스 수): 처리량이 target을 못 따라가거나(plateau≈최대 처리량) `dropped_iterations>0`·p95 급등하는 직전 단계. 라이브 출력의 VUs·dropped_iterations + **Grafana**(throughput·CPU·HikariCP + node_exporter 디스크: %util·쓰기 지연·평균 요청 크기)로 디스크가 병목인지 확증. **iostat 로그 안 씀 — 디스크도 node_exporter→Grafana로 본다.**
 
 ## 3. 기록 → `docs/measurements/Mx.md`
-- **환경 블록**: 박스 사양(i7-6700HQ 4c/8t, 8GB, 5400rpm HDD), JDK 빌드, MySQL 버전, JVM 플래그, 데이터 행수, 네트워크(유선 LAN, RTT).
+- **환경 블록**: 박스 사양(i7-6700HQ 4c/8t, 8GB, 5400rpm HDD), JDK 빌드, DB 버전(TimescaleDB pg16), JVM 플래그, 데이터 행수, 네트워크(유선 LAN, RTT).
 - **수치**: k6의 p95/p99·처리량(req/s)·에러율 + Grafana(서버측: GC pause, HikariCP, CPU/IO).
 - **Grafana 스크린샷** 첨부.
 - **해석 한 단락**: 어디가 병목인지, 왜, 다음 개선 후보.

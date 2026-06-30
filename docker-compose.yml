@@ -38,5 +38,18 @@ services:
       timeout: 5s
       retries: 5
 
+  # 호스트(박스) 메트릭 노출 — 디스크 %util·쓰기 지연·평균 요청 크기 등을 9100으로.
+  # 측정 시 iostat 로그 대신 Prometheus가 긁어 Grafana로 본다. (관측 사이드카 — 파이프라인 인프라 아님, §3.4 무관)
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:v1.8.2
+    container_name: locus-node-exporter
+    network_mode: host
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    command:
+      - --path.rootfs=/host
+    restart: unless-stopped
+
 volumes:
   postgres-data:

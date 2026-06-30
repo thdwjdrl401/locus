@@ -10,3 +10,9 @@ scrape_configs:
     static_configs:
       # ↓ SUT(박스) IP:8093 으로 수정. 앱이 같은 호스트면 host.docker.internal:8093
       - targets: ["192.168.0.10:8093"]
+
+  # 박스 호스트 메트릭(디스크 %util·쓰기 지연·평균 요청 크기 등). 박스 docker-compose의 node-exporter(9100).
+  - job_name: node
+    static_configs:
+      # ↓ SUT(박스) IP:9100 으로 수정.
+      - targets: ["192.168.0.10:9100"]

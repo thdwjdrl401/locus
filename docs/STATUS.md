@@ -124,7 +124,9 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 - [x] **코드 이식 완료**(`test`+`check` green): postgresql 드라이버·Flyway 도입 / Telemetry 복합 PK(device_id, recorded_at) `@IdClass` / `TelemetryBatchDao` `ON CONFLICT`+jsonb(`Types.OTHER`) / `DirectIngestWriter` `persist()`(409 보존) / docker-compose timescaledb / Testcontainers PG. core infra-free 유지(ArchUnit).
 - [ ] 🚧 박스 재측정 — k6 capacity, before=MySQL 1,437 → after=TimescaleDB. `docs/measurements/M2.md`(before/after/해석)
 - [x] PostgreSQL `shared_buffers=2GB` compose에 고정(MySQL buffer-pool 2G와 비교 가능하게) + `shared_preload_libraries=timescaledb`. 맥에서 확장 로드 검증 완료
-- **게이트:** "랜덤→순차로 적재 포화점 변화" 측정 기록. FK ON/OFF 측정은 보류([ROADMAP](ROADMAP.md)).
+- [x] **디스크 메트릭 = node_exporter→Grafana**(박스 compose에 node-exporter 9100 + prometheus job `node`). iostat 로그 폐기 — 디스크도 Grafana로.
+- **측정이 답할 가설**: M1 한계가 *랜덤 액세스*였나 *HDD fsync 물리/엔진 차이*였나. TimescaleDB≫1,437이면 랜덤이 병목(구조가 풀었다), ≈1,437이면 랜덤 아님(이 규모선 throughput 이득 없음 — 정직 기록, 저장소는 보존·운영 결정). 소량·truncate라 파티셔닝 이점은 이 영역서 안 나올 수 있음(측정으로 확인).
+- **게이트:** before/after 포화점 + 디스크 패턴(평균 쓰기 크기·지연)으로 랜덤→순차 여부 판정. FK ON/OFF 측정은 보류([ROADMAP](ROADMAP.md)).
 
 ## M3 — 추상화 검증 (디바이스 타입 추가)  ⬜  보조(집 불필요·즉시 가능)
 - [ ] `TAG`/`ROBOT` 등 둘째 핸들러 추가 시 **`core` diff 0줄** 확인 (양축 추상화 검증, CLAUDE.md §2.2)
