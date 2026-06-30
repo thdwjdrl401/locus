@@ -99,7 +99,7 @@ docker compose up -d
 ---
 
 ## 문서
-- [docs/STATUS.md](docs/STATUS.md) — 진행 현황(단일 진실원)
+- [docs/STATUS.md](docs/STATUS.md) — 진행 현황(기준 문서)
 - [docs/STRUCTURE.md](docs/STRUCTURE.md) — 파일트리 ↔ 결정 매핑
 - [docs/ROADMAP.md](docs/ROADMAP.md) — 마일스톤 ↔ 트리 위치 + 목표 SLO
 - [docs/decisions/](docs/decisions/) — ADR(왜 + 기각한 대안)
