@@ -10,6 +10,7 @@ import com.thdwjdrl.locus.core.domain.Device;
 import com.thdwjdrl.locus.core.domain.DeviceStatus;
 import com.thdwjdrl.locus.core.domain.DeviceType;
 import com.thdwjdrl.locus.core.domain.Telemetry;
+import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
@@ -19,12 +20,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-/** 단건 직접 적재(A0): Device upsert(생성/갱신) + Telemetry 저장. */
+/** 단건 직접 적재(A0): Device upsert(생성/갱신) + Telemetry persist. */
 @ExtendWith(MockitoExtension.class)
 class DirectIngestWriterTest {
 
     @Mock private DeviceRepository deviceRepository;
-    @Mock private TelemetryRepository telemetryRepository;
+    @Mock private EntityManager entityManager;
 
     private final Instant now = Instant.parse("2026-06-20T09:00:00Z");
 
@@ -33,7 +34,7 @@ class DirectIngestWriterTest {
     }
 
     private DirectIngestWriter writer() {
-        return new DirectIngestWriter(deviceRepository, telemetryRepository);
+        return new DirectIngestWriter(deviceRepository, entityManager);
     }
 
     @Test
@@ -47,7 +48,7 @@ class DirectIngestWriterTest {
         assertThat(captor.getValue().getFirstSeenAt()).isEqualTo(now);
         assertThat(captor.getValue().getLastSeenAt()).isEqualTo(now);
         assertThat(captor.getValue().getStatus()).isEqualTo(DeviceStatus.ONLINE);
-        verify(telemetryRepository).save(any(Telemetry.class));
+        verify(entityManager).persist(any(Telemetry.class));
     }
 
     @Test
@@ -62,6 +63,6 @@ class DirectIngestWriterTest {
         assertThat(existing.getFirstSeenAt()).isEqualTo(now.minusSeconds(3600)); // 유지
         assertThat(existing.getStatus()).isEqualTo(DeviceStatus.ONLINE);
         verify(deviceRepository).save(existing);
-        verify(telemetryRepository).save(any(Telemetry.class));
+        verify(entityManager).persist(any(Telemetry.class));
     }
 }

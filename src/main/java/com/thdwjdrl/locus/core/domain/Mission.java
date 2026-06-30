@@ -35,7 +35,7 @@ public class Mission {
     private String type;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "json")
+    @Column(columnDefinition = "jsonb")
     private Map<String, Object> params = new HashMap<>();
 
     @Column(name = "device_id")

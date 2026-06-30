@@ -5,12 +5,9 @@ import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Index;
+import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -20,28 +17,20 @@ import org.hibernate.type.SqlTypes;
 /**
  * 텔레메트리 — 위치·상태 1프레임.
  *
- * <p>공통 컬럼(deviceId, deviceType, 시각, {@link Location}) + 타입별 {@code metrics} JSON 의 단일 테이블 (계획서
+ * <p>공통 컬럼(deviceId, deviceType, 시각, {@link Location}) + 타입별 {@code metrics} JSONB 의 단일 테이블 (계획서
  * §4). 폰 전용 필드(battery/network/activity/appState/permission/sharingEnabled)는 {@code metrics}로 흡수한다.
  *
- * <p>멱등: {@code UNIQUE(device_id, recorded_at)} — "순진하게 먼저" DB unique. M2에서 Redis로 발전. Device와는 FK
- * 없이 {@code deviceId} 문자열로 느슨하게 연결한다(고빈도 단건 insert 비용 회피).
+ * <p>멱등: 복합 PK {@code (device_id, recorded_at)} — TimescaleDB 하이퍼테이블 제약상 파티션 컬럼(recorded_at)이 PK에
+ * 포함돼야 한다. 배치 DAO는 {@code ON CONFLICT DO NOTHING}으로 중복을 조용히 버린다.
  *
  * <p>{@code location}은 nullable: 권한 거부·공유 off 시 미수집(최소 수집).
  */
+@IdClass(TelemetryId.class)
 @Entity
-@Table(
-        name = "telemetry",
-        uniqueConstraints =
-                @UniqueConstraint(
-                        name = "uk_telemetry_device_time",
-                        columnNames = {"device_id", "recorded_at"}),
-        indexes = @Index(name = "idx_telemetry_device_time", columnList = "device_id, recorded_at"))
+@Table(name = "telemetry")
 public class Telemetry {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
     @Column(name = "device_id", nullable = false)
     private String deviceId;
 
@@ -49,7 +38,8 @@ public class Telemetry {
     @Column(name = "device_type", nullable = false)
     private DeviceType deviceType;
 
-    /** 단말이 측정한 시각(봉투의 timestamp). */
+    /** 단말이 측정한 시각(봉투의 timestamp). 복합 PK의 파티션 컬럼. */
+    @Id
     @Column(name = "recorded_at", nullable = false)
     private Instant recordedAt;
 
@@ -60,7 +50,7 @@ public class Telemetry {
     @Embedded private Location location;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "json")
+    @Column(columnDefinition = "jsonb")
     private Map<String, Object> metrics = new HashMap<>();
 
     protected Telemetry() {}
@@ -78,10 +68,6 @@ public class Telemetry {
         this.receivedAt = receivedAt;
         this.location = location;
         this.metrics = (metrics != null) ? metrics : new HashMap<>();
-    }
-
-    public Long getId() {
-        return id;
     }
 
     public String getDeviceId() {

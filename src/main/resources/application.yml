@@ -2,20 +2,21 @@ spring:
   application:
     name: locus
 
-  # M0: MySQL 단일. docker-compose의 mysql 서비스와 짝.
+  # M2: TimescaleDB(PostgreSQL). docker-compose의 timescaledb 서비스와 짝.
   # 자격증명은 env로 외부화(public 레포). 기본값은 로컬 docker-compose 전용 throwaway.
   # 실제 배포는 DB_URL/DB_USERNAME/DB_PASSWORD 주입. (SECURITY.md 참조)
   datasource:
-    # rewriteBatchedStatements=true: JdbcTemplate.batchUpdate가 멀티로우 INSERT로 묶이게 한다(M1 A2 배치 적재의 전제).
-    url: ${DB_URL:jdbc:mysql://localhost:3306/locus?serverTimezone=UTC&characterEncoding=UTF-8&rewriteBatchedStatements=true}
+    # reWriteBatchedInserts=true: PostgreSQL에서 JdbcTemplate.batchUpdate가 멀티로우 INSERT로 묶이게 한다
+    # (MySQL의 rewriteBatchedStatements에 해당 — M1 A2 배치 적재의 전제).
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/locus?reWriteBatchedInserts=true}
     username: ${DB_USERNAME:locus}
     password: ${DB_PASSWORD:locuspw}
-    driver-class-name: com.mysql.cj.jdbc.Driver
+    driver-class-name: org.postgresql.Driver
 
   jpa:
     hibernate:
-      # M0는 ddl-auto=update로 빠르게. 스키마가 안정되면 validate + Flyway 도입 검토.
-      ddl-auto: update
+      # M2~: ddl-auto=validate. 스키마는 Flyway(db/migration/V1__init_schema.sql) 소유.
+      ddl-auto: validate
     properties:
       hibernate:
         format_sql: true

@@ -18,10 +18,10 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * 큐 모드(M1 A2) e2e — 인메모리 큐 + 배치 워커가 실 MySQL에 적재하는지 검증.
+ * 큐 모드(M1 A2) e2e — 인메모리 큐 + 배치 워커가 실 TimescaleDB에 적재하는지 검증.
  *
- * <p>direct와 다른 점: 수집은 항상 202(비동기)이고, 적재는 워커가 배치로 한다(그래서 {@code await}로 flush를 기다린다). 중복은 {@code
- * INSERT IGNORE}라 409가 아니라 조용히 버려진다. 작은 batch/delay로 테스트를 빠르게.
+ * <p>direct와 다른 점: 수집은 항상 202(비동기)이고, 적재는 워커가 배치로 한다(그래서 {@code await}로 flush를 기다린다). 중복은 {@code ON
+ * CONFLICT DO NOTHING}이라 409가 아니라 조용히 버려진다. 작은 batch/delay로 테스트를 빠르게.
  */
 @TestPropertySource(
         properties = {
@@ -70,7 +70,7 @@ class TelemetryQueueIngestIntegrationTest extends IntegrationTestBase {
         await().atMost(Duration.ofSeconds(10))
                 .untilAsserted(() -> assertThat(telemetryRepository.count()).isEqualTo(n));
 
-        // 같은 deviceId 250건 → device는 1행으로 upsert(워커 배치 내 dedupe + ON DUPLICATE KEY)
+        // 같은 deviceId 250건 → device는 1행으로 upsert(워커 배치 내 dedupe + ON CONFLICT DO UPDATE)
         assertThat(deviceRepository.count()).isEqualTo(1);
         Device device = deviceRepository.findByDeviceId("phone-1").orElseThrow();
         assertThat(device.getStatus().name()).isEqualTo("ONLINE");
@@ -78,7 +78,7 @@ class TelemetryQueueIngestIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void 중복_recordedAt은_INSERT_IGNORE로_1행만_남고_409가_아니다() throws Exception {
+    void 중복_recordedAt은_ON_CONFLICT_DO_NOTHING으로_1행만_남고_409가_아니다() throws Exception {
         String ts = Instant.now().minusSeconds(10).toString();
         postTelemetry("phone-dup", ts); // 둘 다 202 (비동기 — 충돌 응답 없음)
         postTelemetry("phone-dup", ts);

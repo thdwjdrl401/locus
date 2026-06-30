@@ -5,14 +5,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.thdwjdrl.locus.core.domain.DeviceStatus;
 import com.thdwjdrl.locus.core.domain.Location;
 import com.thdwjdrl.locus.core.domain.Telemetry;
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,32 +23,38 @@ import org.springframework.transaction.annotation.Transactional;
  * 배치 적재 DAO (M1 A2).
  *
  * <p>핵심: {@code JdbcTemplate.batchUpdate}로 **N행을 한 트랜잭션·한 멀티로우 INSERT**로 보낸다 → fsync 1회가 N행을 커버.
- * (엔티티가 {@code @GeneratedValue(IDENTITY)}라 Hibernate {@code saveAll}은 배치가 안 됨 — 그래서 JdbcTemplate.)
- * 멀티로우로 묶이려면 datasource URL에 {@code rewriteBatchedStatements=true} 필수.
+ * 멀티로우로 묶이려면 datasource URL에 {@code reWriteBatchedInserts=true} 필수(PostgreSQL).
  *
  * <ul>
- *   <li>telemetry: {@code INSERT IGNORE} — {@code UNIQUE(device_id, recorded_at)} 중복은 버린다(유실 허용).
- *   <li>device: 배치 내 deviceId 중복 제거 후 {@code ON DUPLICATE KEY UPDATE}로 last_seen/status 갱신.
+ *   <li>telemetry: {@code ON CONFLICT (device_id, recorded_at) DO NOTHING} — 복합 PK 중복은 조용히 버린다(유실
+ *       허용).
+ *   <li>device: 배치 내 deviceId 중복 제거 후 {@code ON CONFLICT (device_id) DO UPDATE}로 last_seen/status
+ *       갱신.
  * </ul>
+ *
+ * <p>jsonb 파라미터: SQL 레벨 캐스팅({@code CAST(? AS jsonb)}, {@code ?::jsonb})은 JDBC PreparedStatement와
+ * 호환되지 않는다. {@code ps.setObject(n, json, Types.OTHER)}로 바인딩하면 PostgreSQL JDBC 드라이버가 텍스트를 컬럼
+ * 타입(jsonb)에 맞게 변환한다.
  */
 @Component
 @ConditionalOnProperty(name = "locus.ingest.mode", havingValue = "queue")
 public class TelemetryBatchDao {
 
     private static final String INSERT_TELEMETRY =
-            "INSERT IGNORE INTO telemetry "
+            "INSERT INTO telemetry "
                     + "(device_id, device_type, recorded_at, received_at, "
                     + " lat, lng, accuracy_m, altitude_m, speed_mps, heading_deg, metrics) "
-                    + "VALUES (?,?,?,?,?,?,?,?,?,?,?)";
+                    + "VALUES (?,?,?,?,?,?,?,?,?,?,?) "
+                    + "ON CONFLICT (device_id, recorded_at) DO NOTHING";
 
-    // MySQL 8.0.19+ 행 별칭(AS new) — 구식 VALUES() 함수의 deprecation 회피.
+    // PostgreSQL EXCLUDED 행 별칭 — 삽입 시도값을 UPDATE SET에서 참조.
     private static final String UPSERT_DEVICE =
             "INSERT INTO device (device_id, device_type, status, first_seen_at, last_seen_at) "
-                    + "VALUES (?,?,?,?,?) AS new "
-                    + "ON DUPLICATE KEY UPDATE "
-                    + " last_seen_at = GREATEST(COALESCE(device.last_seen_at, new.last_seen_at),"
-                    + " new.last_seen_at), "
-                    + " status = new.status";
+                    + "VALUES (?,?,?,?,?) "
+                    + "ON CONFLICT (device_id) DO UPDATE SET "
+                    + " last_seen_at = GREATEST(COALESCE(device.last_seen_at, EXCLUDED.last_seen_at),"
+                    + " EXCLUDED.last_seen_at), "
+                    + " status = EXCLUDED.status";
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
@@ -68,25 +76,32 @@ public class TelemetryBatchDao {
     }
 
     private void insertTelemetry(List<Telemetry> batch) {
-        List<Object[]> rows = new ArrayList<>(batch.size());
-        for (Telemetry t : batch) {
-            Location loc = t.getLocation();
-            rows.add(
-                    new Object[] {
-                        t.getDeviceId(),
-                        t.getDeviceType().name(),
-                        utc(t.getRecordedAt()),
-                        utc(t.getReceivedAt()),
-                        loc != null ? loc.getLatitude() : null,
-                        loc != null ? loc.getLongitude() : null,
-                        loc != null ? loc.getAccuracy() : null,
-                        loc != null ? loc.getAltitude() : null,
-                        loc != null ? loc.getSpeed() : null,
-                        loc != null ? loc.getHeading() : null,
-                        toJson(t.getMetrics())
-                    });
-        }
-        jdbc.batchUpdate(INSERT_TELEMETRY, rows);
+        jdbc.batchUpdate(
+                INSERT_TELEMETRY,
+                new BatchPreparedStatementSetter() {
+                    @Override
+                    public void setValues(PreparedStatement ps, int i) throws SQLException {
+                        Telemetry t = batch.get(i);
+                        Location loc = t.getLocation();
+                        ps.setString(1, t.getDeviceId());
+                        ps.setString(2, t.getDeviceType().name());
+                        ps.setTimestamp(3, Timestamp.from(t.getRecordedAt()));
+                        ps.setTimestamp(4, Timestamp.from(t.getReceivedAt()));
+                        ps.setObject(5, loc != null ? loc.getLatitude() : null);
+                        ps.setObject(6, loc != null ? loc.getLongitude() : null);
+                        ps.setObject(7, loc != null ? loc.getAccuracy() : null);
+                        ps.setObject(8, loc != null ? loc.getAltitude() : null);
+                        ps.setObject(9, loc != null ? loc.getSpeed() : null);
+                        ps.setObject(10, loc != null ? loc.getHeading() : null);
+                        // jsonb: Types.OTHER로 바인딩 — 드라이버가 text를 jsonb로 위임
+                        ps.setObject(11, toJson(t.getMetrics()), Types.OTHER);
+                    }
+
+                    @Override
+                    public int getBatchSize() {
+                        return batch.size();
+                    }
+                });
     }
 
     /** 배치 안에서 디바이스별 가장 최근 receivedAt만 남겨 upsert(중복 UPDATE 낭비 제거). */
@@ -100,22 +115,16 @@ public class TelemetryBatchDao {
         }
         List<Object[]> rows = new ArrayList<>(latestPerDevice.size());
         for (Telemetry t : latestPerDevice.values()) {
-            LocalDateTime seen = utc(t.getReceivedAt());
             rows.add(
                     new Object[] {
                         t.getDeviceId(),
                         t.getDeviceType().name(),
                         DeviceStatus.ONLINE.name(),
-                        seen, // first_seen_at (INSERT 시에만 의미, UPDATE 절에 없음)
-                        seen // last_seen_at
+                        Timestamp.from(t.getReceivedAt()), // first_seen_at (INSERT 시에만 의미)
+                        Timestamp.from(t.getReceivedAt()) // last_seen_at
                     });
         }
         jdbc.batchUpdate(UPSERT_DEVICE, rows);
-    }
-
-    /** Instant → UTC LocalDateTime: MySQL DATETIME에 tz 변환 없이 바인딩(저장 표현을 Hibernate와 일치시킴). */
-    private static LocalDateTime utc(Instant instant) {
-        return LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
     }
 
     private String toJson(Map<String, Object> metrics) {

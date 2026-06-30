@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.servlet.MockMvc;
 
-/** 디바이스 조회 e2e — 실 MySQL. */
+/** 디바이스 조회 e2e — 실 TimescaleDB/PostgreSQL. */
 class DeviceQueryIntegrationTest extends IntegrationTestBase {
 
     @Autowired private MockMvc mockMvc;

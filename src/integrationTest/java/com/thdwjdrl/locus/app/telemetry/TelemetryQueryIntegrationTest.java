@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.servlet.MockMvc;
 
-/** 조회 e2e — 실 MySQL에서 naive 최신조회(상관 서브쿼리)가 디바이스당 최신 1건을 정확히 고르는지. */
+/** 조회 e2e — 실 TimescaleDB에서 naive 최신조회(상관 서브쿼리)가 디바이스당 최신 1건을 정확히 고르는지. */
 class TelemetryQueryIntegrationTest extends IntegrationTestBase {
 
     @Autowired private MockMvc mockMvc;

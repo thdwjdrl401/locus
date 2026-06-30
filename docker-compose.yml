@@ -2,44 +2,34 @@
 # 관측 스택(prometheus/grafana)은 박스 밖(맥북)에서 → docker-compose.monitoring.yml.
 #
 # 점증 원칙: 한 마일스톤에 파이프라인 인프라 둘 이상 동시에 올리지 않는다.
-#   M0: mysql (아래)
-#   M2: kafka  ← 해당 마일스톤에서 추가
+#   M2: timescaledb (MySQL → TimescaleDB 전환, ADR 0008)
 #   M4: redis  ← 해당 마일스톤에서 추가
 #
 # 기동: docker compose up -d
 # 버전 고정(재현성): 측정이 비교 가능하려면 떠다니는 태그를 쓰지 않는다.
 
 services:
-  mysql:
-    image: mysql:8.0.40
-    container_name: locus-mysql
+  timescaledb:
+    image: timescale/timescaledb:2.17.2-pg16
+    container_name: locus-timescaledb
     environment:
       # .env가 있으면 그 값을, 없으면 throwaway 기본값 (cp .env.example .env)
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpw}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-locus}
-      MYSQL_USER: ${MYSQL_USER:-locus}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-locuspw}
+      POSTGRES_DB: ${POSTGRES_DB:-locus}
+      POSTGRES_USER: ${POSTGRES_USER:-locus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-locuspw}
     ports:
-      # 박스에 이미 시스템 MySQL(3306)이 살아있어 Locus는 호스트 포트를 분리한다.
-      # .env에서 MYSQL_HOST_PORT=3307 (앱은 DB_URL로 같은 포트를 가리킴).
-      - "${MYSQL_HOST_PORT:-3306}:3306"
+      - "${DB_HOST_PORT:-5432}:5432"
     volumes:
-      - mysql-data:/var/lib/mysql
-    # Locus를 박스의 ≈3/4로 격리(시스템 MySQL+OS에 1/4 예약). 8c 중 0–5, 메모리 3G 상한.
+      - postgres-data:/var/lib/postgresql/data
+    # Locus를 박스의 ≈3/4로 격리(시스템 서비스+OS에 1/4 예약). 8c 중 0–5, 메모리 3G 상한.
     # 앱(호스트 JVM)은 taskset -c 0-5 + -Xmx1500m로 같은 경계 안. 합 ≈ 6G ≤ 8G(스왑 회피).
     cpuset: "0-5"
     mem_limit: 3g
-    command:
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_unicode_ci
-      # 측정 튜닝(8GB 박스): 버퍼풀 고정 → M0·M7 비교 가능. 내구성은 기본값(실 타깃 모습).
-      - --innodb-buffer-pool-size=2G
     healthcheck:
-      # $$ -> 컨테이너 셸에서 $MYSQL_ROOT_PASSWORD 로 확장 (compose 치환 아님)
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -p\"$$MYSQL_ROOT_PASSWORD\" || exit 1"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
       interval: 10s
       timeout: 5s
       retries: 5
 
 volumes:
-  mysql-data:
+  postgres-data:

@@ -32,8 +32,11 @@ dependencies {
     // 측정: Actuator -> Prometheus 노출 (M0부터 baseline 수집)
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
 
-    // DB: M0는 MySQL 단일. (M2 Kafka, M4 Redis 의존성은 해당 마일스톤에서 추가)
-    runtimeOnly("com.mysql:mysql-connector-j")
+    // DB: M2 TimescaleDB(PostgreSQL). Flyway로 스키마 관리 (ddl-auto=validate).
+    // M4 Redis 의존성은 해당 마일스톤에서 추가.
+    runtimeOnly("org.postgresql:postgresql")
+    implementation("org.flywaydb:flyway-core")
+    runtimeOnly("org.flywaydb:flyway-database-postgresql")
 
     // --- 테스트 ---
     testImplementation("org.springframework.boot:spring-boot-starter-test")
@@ -48,7 +51,7 @@ tasks.withType<Test> {
 
 // 테스트 2층 분리(jvm-test-suite):
 //   test            = 단위 + 웹(MockMvc), 빠름, Docker 불필요
-//   integrationTest = 통합(Testcontainers 실 MySQL), 느림, Docker 필요  (src/integrationTest/java)
+//   integrationTest = 통합(Testcontainers 실 TimescaleDB), 느림, Docker 필요  (src/integrationTest/java)
 testing {
     suites {
         val integrationTest by registering(JvmTestSuite::class) {
@@ -58,7 +61,7 @@ testing {
                 implementation("org.springframework.boot:spring-boot-starter-test")
                 implementation("org.springframework.boot:spring-boot-testcontainers")
                 implementation("org.testcontainers:junit-jupiter")
-                implementation("org.testcontainers:mysql")
+                implementation("org.testcontainers:postgresql")
             }
             targets {
                 all {
@@ -82,7 +85,7 @@ testing {
     }
 }
 
-// integrationTest가 main의 implementation/runtimeOnly(web·jpa·validation·mysql 등)를 그대로 상속
+// integrationTest가 main의 implementation/runtimeOnly(web·jpa·validation·postgresql·flyway 등)를 그대로 상속
 configurations.named("integrationTestImplementation") {
     extendsFrom(configurations.implementation.get())
 }

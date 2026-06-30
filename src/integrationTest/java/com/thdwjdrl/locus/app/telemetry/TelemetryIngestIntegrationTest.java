@@ -16,7 +16,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
-/** 수집 e2e — 실 MySQL에 실제로 저장되는지(JSON·임베디드·UNIQUE·upsert) 검증. */
+/** 수집 e2e — 실 TimescaleDB에 실제로 저장되는지(JSONB·임베디드·복합PK·upsert) 검증. */
 class TelemetryIngestIntegrationTest extends IntegrationTestBase {
 
     @Autowired private MockMvc mockMvc;

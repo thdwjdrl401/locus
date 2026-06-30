@@ -11,8 +11,8 @@
 | | |
 |---|---|
 | **한 줄** | **방향 전환(2026-06-30)**: 도메인 포지셔닝(IoT 시계열 파이프라인)에 맞춰 로드맵 재정렬. M1(1,437)이 디스크 병목 측정 근거 → **다음 = M2 TimescaleDB 전환**(순차 저장 = PostgreSQL + 시계열 + 병목 해결). |
-| **방금 끝낸 것** | README 전면 재작성(도메인 서사 + 측정 헤드라인 33→1,437). repo 민감어 세탁(히스토리 포함) 완료. M1 측정 완결. |
-| **다음 한 걸음** | M2 TimescaleDB 전환 착수: 영속 계층 이식 + 적재 포화점 재측정(before=MySQL 1,437). 또는 빠른 WebSocket(M4) 먼저. + (별도) 면접 articulation 연습. |
+| **방금 끝낸 것** | **M2 TimescaleDB 코드 이식 완료** — 앱 전체 PostgreSQL 단일 교체(MySQL 제거), Telemetry 복합 PK·Flyway 하이퍼테이블·`ON CONFLICT`·Testcontainers PG. `test`+`check` green. 그 전: README 재작성·문서 표준화·민감어 세탁. |
+| **다음 한 걸음** | **M2 박스 재측정** — k6 capacity, before=MySQL 1,437 → after=TimescaleDB → `docs/measurements/M2.md`(before/after/해석). + (별도) 면접 articulation 연습. |
 | **메모** | GC 튜닝 폐기(I/O가 병목이라 비병목, 측정 근거). SLO: 업링크 10k·조회 1만·다운링크 ~500. 측정 정체성 유지(키워드 아닌 측정 정당화). |
 
 ---
@@ -119,12 +119,12 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 - [x] M1.md 전체 기록 + 표준 용어 정리. (A2 measurements는 flush=1이었음 데이터로 검증)
 - **게이트:** "배치만으로 최대 처리량 X배 + 그 한계(크래시 유실·DB다운·백프레셔)" 측정 → M2 정당화. 병목 이동 시 다음 후보(GC/HikariCP).
 
-## M2 — 배치 적재 (인메모리 큐)  ⬜  쓰기경로
-> 외부 브로커 0 — 최대 처리량은 싱크(배치)가 올리지 큐가 아니다. fan-out 브로커(Redis Streams)는 두 번째 소비자 생기는 M4~ ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)).
-- [ ] 수집 출력 포트 `TelemetryIngestPort` 도입 (`InMemoryQueueIngest` → 나중 `RedisStreamIngest` 교체 이음새, [ADR 0004](decisions/0004-ports-only-at-improvement-seams.md))
-- [ ] 인메모리 큐 + 배치 워커 본구현 (M1 A2 승격) → 처리량 before/after
-- [ ] FK 제약 ON/OFF 처리량 측정 ([보류 결정](ROADMAP.md))
-- **게이트:** 적재 처리량 X배 + 인메모리 한계(크래시 유실·DB다운) 측정 기록, **인프라 0 추가**.
+## M2 — TimescaleDB 전환 (순차 저장)  🔄  쓰기경로
+> M1 잔여 병목 = data fsync(InnoDB B-tree 랜덤 쓰기). 순차 쓰기로 푼다 = TimescaleDB 하이퍼테이블([ADR 0008](decisions/0008-telemetry-store-timescaledb.md)). 앱 전체 PostgreSQL 단일 교체, MySQL 제거.
+- [x] **코드 이식 완료**(`test`+`check` green): postgresql 드라이버·Flyway 도입 / Telemetry 복합 PK(device_id, recorded_at) `@IdClass` / `TelemetryBatchDao` `ON CONFLICT`+jsonb(`Types.OTHER`) / `DirectIngestWriter` `persist()`(409 보존) / docker-compose timescaledb / Testcontainers PG. core infra-free 유지(ArchUnit).
+- [ ] 🚧 박스 재측정 — k6 capacity, before=MySQL 1,437 → after=TimescaleDB. `docs/measurements/M2.md`(before/after/해석)
+- [ ] (측정 시) PostgreSQL `shared_buffers` 등을 MySQL buffer-pool 2G와 비교 가능하게 고정
+- **게이트:** "랜덤→순차로 적재 포화점 변화" 측정 기록. FK ON/OFF 측정은 보류([ROADMAP](ROADMAP.md)).
 
 ## M3 — 추상화 검증 (디바이스 타입 추가)  ⬜  보조(집 불필요·즉시 가능)
 - [ ] `TAG`/`ROBOT` 등 둘째 핸들러 추가 시 **`core` diff 0줄** 확인 (양축 추상화 검증, CLAUDE.md §2.2)

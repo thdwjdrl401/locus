@@ -51,7 +51,7 @@ public class Device {
     private Instant lastSeenAt;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "json")
+    @Column(columnDefinition = "jsonb")
     private Map<String, Object> metadata = new HashMap<>();
 
     protected Device() {}
