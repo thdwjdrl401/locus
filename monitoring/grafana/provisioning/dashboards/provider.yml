@@ -1,0 +1,10 @@
+# Grafana가 시작 시 이 경로의 대시보드 JSON을 자동 등록(provision).
+apiVersion: 1
+providers:
+  - name: locus
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false
