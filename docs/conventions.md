@@ -42,7 +42,7 @@
 ```
 perf(telemetry): 컨슈머 단건 save를 JDBC 벌크로 전환
 
-5,000 디바이스 유입에서 단건 insert가 적재 병목(fsync 바운드, 큐 적체 발산).
+5,000 디바이스 유입에서 단건 insert가 적재 병목(원인=fsync, 큐 적체 발산).
 인메모리 큐 배치 워커 + JdbcTemplate.batchUpdate(500) + rewriteBatchedStatements로 전환.
 
 적재 처리량 1,200→9,800 rows/s (8.2x), 배치 p95 410→41ms, 랙 수렴.

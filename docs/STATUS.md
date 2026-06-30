@@ -13,7 +13,7 @@
 | **한 줄** | **방향 전환(2026-06-30)**: 도메인 포지셔닝(IoT 시계열 파이프라인)에 맞춰 로드맵 재정렬. M1(1,437)이 디스크 병목 측정 근거 → **다음 = M2 TimescaleDB 전환**(순차 저장 = PostgreSQL + 시계열 + 병목 해결). |
 | **방금 끝낸 것** | README 전면 재작성(도메인 서사 + 측정 헤드라인 33→1,437). repo 민감어 세탁(히스토리 포함) 완료. M1 측정 완결. |
 | **다음 한 걸음** | M2 TimescaleDB 전환 착수: 영속 계층 이식 + 적재 포화점 재측정(before=MySQL 1,437). 또는 빠른 WebSocket(M4) 먼저. + (별도) 면접 articulation 연습. |
-| **메모** | GC 튜닝 폐기(I/O 바운드라 비병목, 측정 근거). SLO: 업링크 10k·조회 1만·다운링크 ~500. 측정 정체성 유지(키워드 아닌 측정 정당화). |
+| **메모** | GC 튜닝 폐기(I/O가 병목이라 비병목, 측정 근거). SLO: 업링크 10k·조회 1만·다운링크 ~500. 측정 정체성 유지(키워드 아닌 측정 정당화). |
 
 ---
 
@@ -21,9 +21,9 @@
 
 **도메인: IoT/센서 텔레메트리 시계열 파이프라인** + 측정 주도 정체성 유지. 상세 SLO는 [ROADMAP §목표 SLO](ROADMAP.md).
 
-- **🦴 척추(깊게):** 적재 성능(M0→M1→**M2 TimescaleDB**) · 실시간(**M4 Redis+WebSocket**) · 수집 프로토콜(**M-MQTT**)
+- **🦴 대상(깊게):** 적재 성능(M0→M1→**M2 TimescaleDB**) · 실시간(**M4 Redis+WebSocket**) · 수집 프로토콜(**M-MQTT**)
 - **🎬 조연:** M3 추상화 · M5 지오펜스 · M6 보안 · **M8 k8s** · 페이즈2 정합성
-- **다루지 않음:** GC/메모리 튜닝(I/O 바운드라 비병목 — 측정 근거)
+- **다루지 않음:** GC/메모리 튜닝(I/O가 병목이라 비병목 — 측정 근거)
 
 **목표 데이터 흐름(북극성) ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)·[0008](decisions/0008-telemetry-store-timescaledb.md)):**
 ```
@@ -40,11 +40,11 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 
 | 날짜 | 결정 | 어디에 |
 |---|---|---|
-| 2026-06-28 | **성능 헤드라인 우선**(쓰기/읽기 두 경로 척추, 나머지 조연) | 이 문서 §포지셔닝 |
-| 2026-06-28 | **M1 = fsync 분할 실험**(배치 insert·flush 설정·그룹 커밋, smoking gun=fsync/req) | [`M1.md`](measurements/M1.md) |
-| 2026-06-28 | **M2 = 인메모리 큐 배치**(외부 브로커 0). 천장은 싱크가 올린다, 큐 아님 | ROADMAP 매핑표 |
+| 2026-06-28 | **성능 헤드라인 우선**(쓰기/읽기 두 경로 대상, 나머지 조연) | 이 문서 §포지셔닝 |
+| 2026-06-28 | **M1 = fsync 분할 실험**(배치 insert·flush 설정·그룹 커밋, 결정적 지표=fsync/req) | [`M1.md`](measurements/M1.md) |
+| 2026-06-28 | **M2 = 인메모리 큐 배치**(외부 브로커 0). 최대 처리량은 싱크가 올린다, 큐 아님 | ROADMAP 매핑표 |
 | 2026-06-28 | **메시징/저장 아키텍처 확정**: fan-out 브로커=**Redis Streams**(Kafka 아님) · DeviceType별 보존·도달범위 · 리플레이 2종(운영/도메인) · 폰 장기경로 구조상 없음 | **[ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)** |
-| 2026-06-28 | Kafka는 **Redis Streams 못 버틸 때**의 측정-게이트 전환(사다리 ③) | [ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md) |
+| 2026-06-28 | Kafka는 **Redis Streams 못 버틸 때**의 측정-게이트 전환(단계 ③) | [ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md) |
 | 2026-06-29 | **STATUS 하네스 기계화** — pre-commit 훅이 실질 변경 시 STATUS 동반 갱신 강제 | `.githooks/pre-commit`, CLAUDE §7, build.gradle.kts |
 | 2026-06-30 | **도메인 포지셔닝**(IoT/센서 시계열 파이프라인). 로드맵 재정렬, GC 튜닝 제외(비병목), 목표 SLO 명시 | [ROADMAP §SLO](ROADMAP.md) |
 | 2026-06-30 | **텔레메트리 저장소 TimescaleDB 전환** — M1 디스크 병목이 트리거. 순차 저장=PostgreSQL+시계열+병목 해결 | **[ADR 0008](decisions/0008-telemetry-store-timescaledb.md)** |
@@ -89,7 +89,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 ### 시뮬레이터·측정 인프라
 - [x] 시뮬레이터 (가상스레드 1디바이스=1스레드, random walk)
 - [x] Actuator → Prometheus 메트릭 노출 (p95/p99·GC·HikariCP)
-- [x] k6 스크립트: `baseline`(닫힌) · `stress`(닫힌 knee) · `capacity`(열린, 1Hz 디바이스)
+- [x] k6 스크립트: `baseline`(닫힌) · `stress`(닫힌 모델 포화점) · `capacity`(열린, 1Hz 디바이스)
 - [x] RUNBOOK(2머신) · monitoring compose(Prometheus/Grafana) · run-app.sh
 ### 측정 환경 구축 (2026-06-21~22)
 - [x] 박스(우분투): JDK21 · Docker · Locus MySQL(docker 3307, 시스템 MySQL과 공존) · 앱 8093(tomcat9가 8080 점유) · 3/4 자원 격리(cpuset 0-5)
@@ -98,16 +98,16 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 ### 측정 (2026-06-29 capacity·병목 확증 완료)
 - [x] **닫힌 baseline 3회 중앙값** (50VU, 2026-06-29): **36.5 req/s, p95 1.63s**, 에러 0% (닫힌>열린: group commit 효과)
 - [x] 환경 보강: RTT avg 0.81ms, 시작 행수 34,987
-- [x] **capacity 측정** — knee **≈ 33** 1Hz 디바이스 (달성 처리량이 4회 런 모두 ~33으로 견고; 닫힌 32.9 포함). p95는 천장 위로 미느냐·정착에 따라 0.96s~30s 출렁 = 백로그 산물
-- [x] **병목 확증 = HDD fsync 3중 증거**: CPU 유휴(2~8%) + HikariCP pending + 디스크 %util 97%·f_await 25ms·f/s 39(iostat 194샘플 평균) → **천장 산수로 닫힘**(40 fsync/s ÷ ~1.2 fsync/req ≈ 33)
+- [x] **capacity 측정** — 포화점 **≈ 33** 1Hz 디바이스 (달성 처리량이 4회 런 모두 ~33으로 견고; 닫힌 32.9 포함). p95는 최대 처리량 위로 미느냐·정착에 따라 0.96s~30s 출렁 = 백로그 산물
+- [x] **병목 확증 = HDD fsync 3중 증거**: CPU 유휴(2~8%) + HikariCP pending + 디스크 %util 97%·f_await 25ms·f/s 39(iostat 194샘플 평균) → **최대 처리량이 계산으로 설명됨**(40 fsync/s ÷ ~1.2 fsync/req ≈ 33)
 - [x] [`measurements/M0.md`](measurements/M0.md) 수치·해석·스크린샷(`img/`) 기록 완성 + 원본 데이터 `M0-raw/`
 - [x] **커밋 + `m0` 태그** (`9e3142b` 측정 + `85170d5` 문서정리, 태그 재지정. 미푸시)
 
 ---
 
-## M1 — 적재 천장 깨기: fsync 분할  🔄  🦴 쓰기경로
+## M1 — 적재 최대 처리량 높이기: fsync 분할  🔄  🦴 쓰기경로
 > 설계 완료 → [`measurements/M1.md`](measurements/M1.md). M0 병목(`단건 insert + 커밋당 fsync → ~33 req/s`)을 **MySQL 안에서 먼저** 짜낸다. Kafka 없음.
-> **결정적 지표(smoking gun) = 요청당 fsync 횟수**(`Innodb_data_fsyncs` 델타 ÷ 요청 수) — 이게 줄며 천장 오르면 "병목=fsync" 인과 증명.
+> **결정적 지표 = 요청당 fsync 횟수**(`Innodb_data_fsyncs` 델타 ÷ 요청 수) — 이게 줄며 최대 처리량 오르면 "병목=fsync" 인과 증명.
 - [x] 실험 *설계* 완료 (A0~A3·A2-x 비교군, 절차, 예상결과)
 - [x] **A1 측정** (flush=2): 포화점 33→**66**(~2×), log fsync/req 1.0→0.05 → **fsync 병목 인과 증명**. 원본 `M1-raw/`
 - [x] **A2 구현 완료**: `TelemetryIngestPort`(ADR 0004) + 인메모리 큐 + 배치 워커(SmartLifecycle) + `TelemetryBatchDao`(`JdbcTemplate.batchUpdate`). `mode=direct(기본)|queue`. green
@@ -119,10 +119,10 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 - [ ] 🚧 A3 측정 — A2+flush=2 합산 상한
 - [ ] 🚧 A2-x 측정 — Device upsert 분리(핫패스 UPDATE 교란변수 격리)
 - [ ] 🚧 병목 귀인 확증 — iostat %util + fsync/req 델타 + Grafana(CPU/HikariCP). *안 오르면* CPU/풀로 재귀인.
-- **게이트:** "배치만으로 천장 X배 + 그 한계(크래시 유실·DB다운·백프레셔)" 측정 → M2 정당화. 병목 이동 시 다음 카드(GC/HikariCP).
+- **게이트:** "배치만으로 최대 처리량 X배 + 그 한계(크래시 유실·DB다운·백프레셔)" 측정 → M2 정당화. 병목 이동 시 다음 후보(GC/HikariCP).
 
 ## M2 — 배치 적재 (인메모리 큐)  ⬜  🦴 쓰기경로
-> 외부 브로커 0 — 천장은 싱크(배치)가 올리지 큐가 아니다. fan-out 브로커(Redis Streams)는 두 번째 소비자 생기는 M4~ ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)).
+> 외부 브로커 0 — 최대 처리량은 싱크(배치)가 올리지 큐가 아니다. fan-out 브로커(Redis Streams)는 두 번째 소비자 생기는 M4~ ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)).
 - [ ] 수집 출력 포트 `TelemetryIngestPort` 도입 (`InMemoryQueueIngest` → 나중 `RedisStreamIngest` 교체 이음새, [ADR 0004](decisions/0004-ports-only-at-improvement-seams.md))
 - [ ] 인메모리 큐 + 배치 워커 본구현 (M1 A2 승격) → 처리량 before/after
 - [ ] FK 제약 ON/OFF 처리량 측정 ([보류 결정](ROADMAP.md))

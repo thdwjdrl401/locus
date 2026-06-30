@@ -6,7 +6,7 @@
 
 ## 맥락
 디커플링·fan-out·리플레이 요구를 정리하고, **DeviceType별 데이터 거버넌스**를 저장 아키텍처에 반영한다.
-대외 도메인이 위치정보라 보존 최소화가 1급 제약(CLAUDE.md §3.5). "텔레메트리=Kafka" 반사를 거부하고 규모·트레이드오프로 고른다.
+대외 도메인이 위치정보라 보존 최소화가 1급 제약(CLAUDE.md §3.5). "텔레메트리는 곧 Kafka"라는 관성적 선택을 거부하고 규모·트레이드오프로 고른다.
 
 ## 결정 요약
 1. **fan-out 브로커는 Kafka가 아니라 Redis Streams.** 디커플링·fan-out엔 Redis Streams의 Consumer Group으로 충분하고, Locus 규모(시뮬레이터 부하·로컬 Docker)에선 운영·메모리 부담이 가볍다. **보존/리플레이/처리량이 한계를 넘으면 Kafka로 전환**(측정 근거로).
@@ -49,9 +49,9 @@ raw telemetry 테이블 ──▶ [운영 리플레이 원천] (모든 DeviceTyp
 
 ## 기각된 대안 — Kafka를 fan-out 브로커로 (지금)
 - fan-out·디커플링 이득은 Redis Streams Consumer Group으로 **이미 확보**(이득 중복).
-- 처리량 천장은 **싱크(MySQL 배치 insert)** 가 정하지 브로커가 아니다([M1](../measurements/M1.md)) → Kafka로 천장이 오르지 않음.
+- 최대 처리량은 **싱크(MySQL 배치 insert)** 가 정하지 브로커가 아니다([M1](../measurements/M1.md)) → Kafka로 최대 처리량이 오르지 않음.
 - Kafka 고유 가치(대용량 보존·로그 리플레이·다수 파티션 병렬)는 **이 규모에서 회수 안 됨** + 운영·메모리 비용만.
-- → **지금은 Redis Streams, Kafka는 "Streams를 못 버틸 때"의 측정-게이트 전환 대상.** ("텔레메트리=Kafka" 반사 대신 의도적 선택 + 전환 기준을 측정으로 제시하는 게 핵심.)
+- → **지금은 Redis Streams, Kafka는 "Streams를 못 버틸 때"의 측정-게이트 전환 대상.** ("텔레메트리는 곧 Kafka"라는 관성적 선택 대신 의도적 선택 + 전환 기준을 측정으로 제시하는 게 핵심.)
 
 ## 수집 전송 — MQTT 추가 (2026-06-30, 계층 구분 명확화)
 > **MQTT(수집 전송) ≠ Redis Streams(내부 fan-out 브로커).** 다른 계층이라 공존한다.
@@ -73,7 +73,7 @@ raw telemetry 테이블 ──▶ [운영 리플레이 원천] (모든 DeviceTyp
 - **"버퍼에 PII가 얼마나 오래 머무는가"에 답할 수 있어야 함.**
 
 ## 영향 (점증 구축 — 지금 다 만들지 않음)
-- **M1/M2**: 외부 브로커 없이 **인메모리 큐 + 배치**(가장 단순, 처리량 증명). 천장 레버는 배치 insert.
+- **M1/M2**: 외부 브로커 없이 **인메모리 큐 + 배치**(가장 단순, 처리량 증명). 최대 처리량을 올리는 요인은 배치 insert.
 - **M4**: Redis 도입(어차피 `LatestStateLookup` 캐시용) → **같은 Redis가 캐시 + Streams 브로커** 두 일. 새 인프라 아님(§3.4 안 깸). 인메모리 큐 → Stream Consumer Group(`storage`) + `monitoring` 푸시로 승격.
 - **M5**: 지오펜스 = 같은 Stream의 또 다른 Consumer Group.
 - **M6**: raw TTL·폰 강제 삭제/익명화·버퍼 PII 점검.
