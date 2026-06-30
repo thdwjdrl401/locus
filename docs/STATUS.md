@@ -11,8 +11,8 @@
 | | |
 |---|---|
 | **한 줄** | **방향 전환(2026-06-30)**: 도메인 포지셔닝(IoT 시계열 파이프라인)에 맞춰 로드맵 재정렬. M1(1,437)이 디스크 병목 측정 근거 → **다음 = M2 TimescaleDB 전환**(순차 저장 = PostgreSQL + 시계열 + 병목 해결). |
-| **방금 끝낸 것** | **M2-par 워커 병렬화 — SLO 10k 달성**(N=4 **11,452 rows/s**, durable, 디스크 100%). N=8에서 device upsert 데드락 발견 → `TreeMap` 락 순서 통일로 수정(`test` green). |
-| **다음 한 걸음** | **박스 N=8 재측정**으로 데드락 0 확인 → `M2-par.md` 기록 → 커밋·태그. (수정 코드 push 필요 — 박스에서 pull.) |
+| **방금 끝낸 것** | **M2-par 측정 완료** — 워커 병렬화(group commit, append-only ~14k) + 큐 사이징(200k)으로 **단일 HDD에서 도착 10k rows/s 무손실(dropped/s=0)** 달성. 둘째 병목=device 행 락(device-on은 drain<10k, 큐로 못 고침 → **device 분리=M4 필수** 측정 확정). 데드락(`TreeMap` 락 순서) 수정. 폐기 시도(bgwriter 역효과·checkpoint_timeout 함정) 정직 기록. `docs/measurements/M2-par.md`. |
+| **다음 한 걸음** | **M2-par 커밋·태그**(`m2-par`) → 다음 마일스톤. SLO 10k 무손실은 **M4(device 상태 Redis 분리 + Streams 내구 버퍼)** 에서 실경로화. |
 | **메모** | GC 튜닝 폐기(I/O가 병목이라 비병목, 측정 근거). SLO: 업링크 10k·조회 1만·다운링크 ~500. 측정 정체성 유지(키워드 아닌 측정 정당화). |
 
 ---
@@ -128,13 +128,15 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 - [x] `shared_buffers=2GB`·`shared_preload_libraries=timescaledb` compose 고정 · 디스크 메트릭 node_exporter→Grafana(iostat 로그 폐기).
 - FK ON/OFF 처리량 측정은 보류([ROADMAP](ROADMAP.md)).
 
-## M2-par — 배치 워커 병렬화 (SLO 10k 향)  🔄  쓰기경로
-> M2에서 병목이 **단일 배치 워커**로 이동(디스크 59% 여유). 워커/커넥션을 병렬화해 디스크 여유를 채워 SLO(업링크 10k)에 도전. durable 유지 가능성 — 측정으로 확인.
-- [x] **코드 완료**(`test` green): `TelemetryBatchWorker` 단일→N개 스레드, `locus.ingest.workers`(env `INGEST_WORKERS`, 기본 1) + HikariCP `maximum-pool-size`(env `DB_POOL_MAX`, 기본 16). 공유 큐 concurrent drainTo, 워커당 커넥션 1개. 기본 1이라 M2 동작 보존.
-- [x] 🚧 박스 N=1,2,4,8 측정(1차) → N=4에서 **11,452 rows/s(디스크 93→100%) = SLO 10k 달성**, durable. N=1 6,003 / N=2 9,000. 처리량 곡선 = 워커↑로 디스크 여유를 채움.
-- [x] **N=8 데드락 발견·수정**: 다중 워커 device upsert가 도착순(LinkedHashMap)으로 행 락을 엇갈리게 잡아 `deadlock detected` → 배치 유실 → N=8이 6,645로 역행. `TreeMap`으로 device_id 정렬 → 모든 워커 동일 락 순서 → 순환 대기 불가. (`test` green, **N=8 재측정으로 데드락 0 확인 후 태그**.)
-- [ ] 🚧 박스 N=8 재측정(수정 검증) → `deadlock detected`/flush 에러 0 확인 → `docs/measurements/M2-par.md` 기록.
-- **게이트:** 5,459→11,452 측정 기록(SLO 달성). 데드락 수정 재현 확인 후 M2-par 마감·태그.
+## M2-par — 배치 워커 병렬화 + 적재 무손실 용량  ✅  쓰기경로
+> M2에서 병목이 단일 배치 워커로 이동. 워커 병렬화 + 큐 사이징으로 단일 HDD에서 도착 10k 무손실 달성, 다음 병목까지 매핑. 전체: [`docs/measurements/M2-par.md`](measurements/M2-par.md).
+- [x] **코드**(`test` green): `TelemetryBatchWorker` 단일→N 스레드(`INGEST_WORKERS`, 기본 1) + HikariCP `DB_POOL_MAX`. 공유 큐 concurrent drainTo, 워커당 커넥션 1. 기본 1이라 M2 동작 보존.
+- [x] **워커 병렬화 = group commit 스케일**: append-only 평탄 N=6 9.5k → N=12 12.8k → N=16 14.4k(디스크 순차 대역폭 수렴). 단일 워커 병목 해소.
+- [x] **둘째 병목 = device 행 락**: device upsert on은 워커 스케일 막힘(N=12 off 12.8k/디스크100% vs on 9k/디스크80%). device-on @10k는 큐 200k도 가득 차고 드롭(drain<10k 지속 deficit) → **device 분리(M4)가 10k에 필수** 측정 확정.
+- [x] **데드락 발견·수정**: 다중 워커 device upsert 도착순 락(LinkedHashMap) → `deadlock detected`. `TreeMap` device_id 정렬로 락 순서 통일(수정, `test` green).
+- [x] **10k 무손실 달성**: append-only N=16 + **큐 200k**(체크포인트 스톨 backlog ~12k 흡수) → 도착 10k dropped/s=0, durable, 단일 5400rpm HDD. 드롭 원인=배치 큐 용량(흡수 부족), 큐 사이징=worst스톨×유입×1.5~2.
+- [x] **폐기 시도(정직 기록)**: bgwriter 트리클(포화 디스크에서 WAL 경합 역효과, p95 3.5→199ms) / `checkpoint_timeout=15min`(테스트 창 밖으로 스톨 밀어내는 측정 함정) / 잘못 짚은 가설(CPU 과구독·N=8 과병렬·램프피크 조기 SLO 선언) → 평탄·격리 측정으로 정정.
+- **게이트:** ✅ 단일 HDD 도착 10k 무손실(append-only) 측정 기록. SLO 10k 실경로화 = M4(device 상태 Redis 분리 + Streams 내구 버퍼).
 
 ## M3 — 추상화 검증 (디바이스 타입 추가)  ⬜  보조(집 불필요·즉시 가능)
 - [ ] `TAG`/`ROBOT` 등 둘째 핸들러 추가 시 **`core` diff 0줄** 확인 (양축 추상화 검증, CLAUDE.md §2.2)
