@@ -52,16 +52,14 @@ export const options = {
   },
 };
 
-// setup은 1회만 실행 → 모든 VU가 공유하는 기준 시각. 전역 고유 카운터와 합쳐
-// recorded_at(ms)을 전역 고유하게 만들어 UNIQUE(device_id, recorded_at) 충돌을 0으로.
-export function setup() {
-  return { base: Date.now() };
-}
-
-export default function (data) {
-  const i = exec.scenario.iterationInTest; // 시나리오 전역 고유 정수
+export default function () {
+  const i = exec.scenario.iterationInTest; // 시나리오 전역 고유 정수 (deviceId 분산용)
   const deviceId = `phone-${i % POOL}`;
-  const ts = new Date(data.base + i).toISOString(); // 전역 고유 ms + 검증 윈도우 내(과거 수초)
+  // recorded_at = 실제 현재 시각.
+  // (이전 버그: base+i 가 1ms/iter로 증가 → >1000 req/s에서 실제 경과시간보다 미래로 표류 →
+  //  @ValidTimestamp(미래 60s 초과)로 대량 400. ~2,300 "천장"의 정체가 이 아티팩트였음.)
+  // 디바이스 2000개 라운드로빈이라 같은 device가 같은 ms에 겹칠 확률 낮고, 겹쳐도 ON CONFLICT로 dedup(202 유지).
+  const ts = new Date().toISOString();
 
   const body = JSON.stringify({
     deviceId,

@@ -123,9 +123,9 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 > M1 잔여 병목 = data fsync(InnoDB B-tree 랜덤 쓰기). 순차 쓰기로 푼다 = TimescaleDB 하이퍼테이블([ADR 0008](decisions/0008-telemetry-store-timescaledb.md)). 앱 전체 PostgreSQL 단일 교체, MySQL 제거.
 - [x] **코드 이식 완료**(`test`+`check` green): postgresql 드라이버·Flyway 도입 / Telemetry 복합 PK(device_id, recorded_at) `@IdClass` / `TelemetryBatchDao` `ON CONFLICT`+jsonb(`Types.OTHER`) / `DirectIngestWriter` `persist()`(409 보존) / docker-compose timescaledb / Testcontainers PG. core infra-free 유지(ArchUnit).
 - [x] **1차 측정(2026-06-30)**: queue 모드 ~2,200 rows/s까지 0 드롭·p95 1ms. **MySQL 1,437 대비 ≥1.5×, 디스크 ~88%(미포화)** → 랜덤→순차 효과 확인(평균 쓰기 크기↑). CPU 38%·HikariCP active=1·GC 무시.
-- [x] **발견: ~2,200에서 HTTP 인테이크가 붕괴**(앱·DB·디스크 다 여유, 앱 로그 무에러 = Tomcat 커넥션/소켓 레벨). **스토리지 진짜 천장은 더 위** — 인테이크가 측정 교란. (어제 본 HikariCP 타임아웃은 direct 모드 로그, 무관.)
-- [ ] 🚧 **인테이크 뚫고 재측정**(길 A): Tomcat 커넥터 상향(application.yml) + 박스 `net.core.somaxconn` → 디스크 100% 지점=스토리지 천장. 안 풀리면 HTTP 우회 harness(길 B).
-- [ ] 🚧 그 후 `docs/measurements/M2.md` 기록(before=1,437 / after=스토리지 천장 / 병목 이동)
+- [x] **진단 정정: ~2,300 "붕괴"는 시스템 한계가 아니라 k6 스크립트 버그**. Prometheus status별 조회로 실패=**400(CLIENT_ERROR)** 확인 → `@ValidTimestamp(미래 60s)`가 거절. 스크립트 `recorded_at=base+i`(1ms/iter)가 >1000 req/s에서 미래로 표류 → 윈도우 초과. **서버는 정상(미래 거절은 옳음)**. Tomcat 튜닝(a83c4a2)은 헛다리였음(무해라 유지). → `load/telemetry-capacity.js` 실제시각으로 수정.
+- [ ] 🚧 **수정 스크립트로 재측정** → 비로소 TimescaleDB 진짜 천장(디스크 100% 지점). 박스 변경 불필요, 맥에서 k6만 재실행.
+- [ ] 🚧 그 후 `docs/measurements/M2.md` 기록(before=1,437 / after=진짜 천장 / 병목 이동)
 - [x] PostgreSQL `shared_buffers=2GB` compose에 고정(MySQL buffer-pool 2G와 비교 가능하게) + `shared_preload_libraries=timescaledb`. 맥에서 확장 로드 검증 완료
 - [x] **디스크 메트릭 = node_exporter→Grafana**(박스 compose에 node-exporter 9100 + prometheus job `node`). iostat 로그 폐기 — 디스크도 Grafana로.
 - **측정이 답할 가설**: M1 한계가 *랜덤 액세스*였나 *HDD fsync 물리/엔진 차이*였나. TimescaleDB≫1,437이면 랜덤이 병목(구조가 풀었다), ≈1,437이면 랜덤 아님(이 규모선 throughput 이득 없음 — 정직 기록, 저장소는 보존·운영 결정). 소량·truncate라 파티셔닝 이점은 이 영역서 안 나올 수 있음(측정으로 확인).
