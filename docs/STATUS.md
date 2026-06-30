@@ -49,6 +49,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 | 2026-06-30 | **도메인 포지셔닝**(IoT/센서 시계열 파이프라인). 로드맵 재정렬, GC 튜닝 제외(비병목), 목표 SLO 명시 | [ROADMAP §SLO](ROADMAP.md) |
 | 2026-06-30 | **텔레메트리 저장소 TimescaleDB 전환** — M1 디스크 병목이 트리거. 순차 저장=PostgreSQL+시계열+병목 해결 | **[ADR 0008](decisions/0008-telemetry-store-timescaledb.md)** |
 | 2026-06-30 | **MQTT 수집 추가**(IoT 표준 전송). Redis Streams(fan-out)와 다른 계층, 공존. Kafka는 보류 유지 | [ADR 0007 §MQTT](decisions/0007-messaging-storage-redis-streams-and-governance.md) |
+| 2026-06-30 | **문서 작성 규칙 강화** — 비유·직역체 조어·장식 이모지·지어낸 서사 금지를 §7에 codify | [conventions.md §7](conventions.md) |
 
 ---
 
