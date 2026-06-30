@@ -16,7 +16,9 @@ import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Component;
 
 /**
- * 배치 적재 워커 (M1 A2). 전용 스레드 하나가 큐에서 N건을 모아 {@link TelemetryBatchDao}로 한 번에 적재한다 → fsync를 N건당 1회로 분할.
+ * 배치 적재 워커 (M1 A2, M2-par 병렬화). 전용 스레드 {@code workers}개가 <b>같은 큐</b>에서 각자 N건을 모아 {@link
+ * TelemetryBatchDao}로 적재한다 → fsync를 N건당 1회로 분할 + 싱크를 병렬화. 큐 {@code poll}/{@code drainTo}와 메트릭은
+ * 스레드세이프하고 각 스레드는 자기 로컬 버퍼를 쓰므로, 스레드 수만 늘리면 된다(워커당 커넥션 1개 → DB 풀 크기 이상 두지 않는다).
  *
  * <p>flush 트리거: 큐에서 첫 건을 {@code maxDelayMs}까지 기다렸다가, 즉시 {@code drainTo}로 현재 쌓인 것을 batchSize까지 끌어모아
  * 적재. 고부하면 큐가 항상 차 있어 batchSize로 가득 찬 배치가 나가고, 저부하면 작은 배치가 낮은 지연으로 나간다.
@@ -40,7 +42,7 @@ public class TelemetryBatchWorker implements SmartLifecycle {
     private final Counter flushErrors;
 
     private volatile boolean running = false;
-    private Thread worker;
+    private final List<Thread> workers = new ArrayList<>();
 
     public TelemetryBatchWorker(
             BlockingQueue<Telemetry> queue,
@@ -69,11 +71,16 @@ public class TelemetryBatchWorker implements SmartLifecycle {
     @Override
     public void start() {
         running = true;
-        worker = new Thread(this::runLoop, "telemetry-batch-worker");
-        worker.setDaemon(true);
-        worker.start();
+        int n = Math.max(1, props.getWorkers());
+        for (int i = 0; i < n; i++) {
+            Thread t = new Thread(this::runLoop, "telemetry-batch-worker-" + i);
+            t.setDaemon(true);
+            t.start();
+            workers.add(t);
+        }
         log.info(
-                "텔레메트리 배치 워커 시작 (batchSize={}, maxDelayMs={}, deviceUpsert={})",
+                "텔레메트리 배치 워커 {}개 시작 (batchSize={}, maxDelayMs={}, deviceUpsert={})",
+                n,
                 props.getBatchSize(),
                 props.getMaxDelayMs(),
                 props.isDeviceUpsert());
@@ -133,14 +140,17 @@ public class TelemetryBatchWorker implements SmartLifecycle {
     @Override
     public void stop() {
         running = false;
-        if (worker != null) {
-            worker.interrupt();
+        for (Thread t : workers) {
+            t.interrupt();
+        }
+        for (Thread t : workers) {
             try {
-                worker.join(TimeUnit.SECONDS.toMillis(10));
+                t.join(TimeUnit.SECONDS.toMillis(10));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
         }
+        workers.clear();
     }
 
     @Override

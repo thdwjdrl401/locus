@@ -35,6 +35,9 @@ public class IngestProperties {
     /** Device upsert 수행 여부. {@code false} = M1 A2-x(핫패스 UPDATE 교란변수 격리). */
     private boolean deviceUpsert = true;
 
+    /** 배치 워커 스레드 수(queue 모드). 병렬 적재로 단일 워커 처리율 한계를 넘긴다(M2-par). DB 풀 크기 이하로 둔다. */
+    private int workers = 1;
+
     public String getMode() {
         return mode;
     }
@@ -73,5 +76,13 @@ public class IngestProperties {
 
     public void setDeviceUpsert(boolean deviceUpsert) {
         this.deviceUpsert = deviceUpsert;
+    }
+
+    public int getWorkers() {
+        return workers;
+    }
+
+    public void setWorkers(int workers) {
+        this.workers = workers;
     }
 }

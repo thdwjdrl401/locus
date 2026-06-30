@@ -12,6 +12,9 @@ spring:
     username: ${DB_USERNAME:locus}
     password: ${DB_PASSWORD:locuspw}
     driver-class-name: org.postgresql.Driver
+    # 배치 워커 N개가 각자 커넥션 1개를 쓴다(M2-par) → 풀은 워커 수 이상으로.
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX:16}
 
   jpa:
     hibernate:
@@ -65,6 +68,8 @@ locus:
     max-delay-ms: ${INGEST_MAX_DELAY_MS:200}
     # false면 Device upsert 생략 = A2-x(핫패스 UPDATE 교란변수 격리)
     device-upsert: ${INGEST_DEVICE_UPSERT:true}
+    # 배치 워커 스레드 수(M2-par 병렬화). 단일 워커 처리율 한계를 넘김. DB_POOL_MAX 이하로.
+    workers: ${INGEST_WORKERS:1}
 
 logging:
   level:

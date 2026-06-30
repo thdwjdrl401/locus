@@ -130,8 +130,8 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 
 ## M2-par — 배치 워커 병렬화 (SLO 10k 향)  🔄  쓰기경로
 > M2에서 병목이 **단일 배치 워커**로 이동(디스크 59% 여유). 워커/커넥션을 병렬화해 디스크 여유를 채워 SLO(업링크 10k)에 도전. durable 유지 가능성 — 측정으로 확인.
-- [ ] 워커 N개 + HikariCP 풀 N개 (`locus.ingest.workers=N` 파라미터). 공유 큐 concurrent drainTo, 각자 커넥션.
-- [ ] 박스 N=1,2,4,8 측정 → 처리량 곡선 + 다음 병목(디스크 100%? CPU? PG 인덱스/device 행 락 경합?).
+- [x] **코드 완료**(`test` green): `TelemetryBatchWorker` 단일→N개 스레드, `locus.ingest.workers`(env `INGEST_WORKERS`, 기본 1) + HikariCP `maximum-pool-size`(env `DB_POOL_MAX`, 기본 16). 공유 큐 concurrent drainTo, 워커당 커넥션 1개. 기본 1이라 M2 동작 보존.
+- [ ] 🚧 박스 N=1,2,4,8 측정 → 처리량 곡선 + 다음 병목(디스크 100%? CPU? PG 인덱스/device 행 락 경합?).
 - **게이트:** 5,459→? 측정 기록. 10k 도달 여부 + 다음 병목. 내구성 완화는 그래도 부족할 때만(별도 결정).
 
 ## M3 — 추상화 검증 (디바이스 타입 추가)  ⬜  보조(집 불필요·즉시 가능)
