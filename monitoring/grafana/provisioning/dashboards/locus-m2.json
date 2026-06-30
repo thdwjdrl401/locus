@@ -28,7 +28,7 @@
       "id": 2, "type": "timeseries", "title": "달성 처리량 (rows/s) — 포화점은 이게 plateau",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
-      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "fieldConfig": { "defaults": { "unit": "rows/s", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(locus_ingest_inserted_total[30s])", "legendFormat": "inserted rows/s" } ]
     },

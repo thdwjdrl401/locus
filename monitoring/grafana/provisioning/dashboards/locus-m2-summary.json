@@ -27,7 +27,7 @@
       "id": 5, "type": "stat", "title": "포화점 (peak 달성 처리량, 표시 구간 최댓값)",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
-      "fieldConfig": { "defaults": { "unit": "ops", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] } }, "overrides": [] },
+      "fieldConfig": { "defaults": { "unit": "rows/s", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["max"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "area", "textMode": "value_and_name", "justifyMode": "auto" },
       "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(locus_ingest_inserted_total[30s])", "legendFormat": "rows/s" } ]
     },
@@ -35,7 +35,7 @@
       "id": 1, "type": "timeseries", "title": "달성 처리량 (rows/s) — 포화점은 이게 plateau",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 9, "w": 12, "x": 0, "y": 4 },
-      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2 } }, "overrides": [] },
+      "fieldConfig": { "defaults": { "unit": "rows/s", "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2 } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(locus_ingest_inserted_total[30s])", "legendFormat": "inserted rows/s" } ]
     },
