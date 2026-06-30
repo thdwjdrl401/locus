@@ -74,7 +74,7 @@ raw telemetry 테이블 ──▶ [운영 리플레이 원천] (모든 DeviceTyp
 
 ## 영향 (점증 구축 — 지금 다 만들지 않음)
 - **M1/M2**: 외부 브로커 없이 **인메모리 큐 + 배치**(가장 단순, 처리량 증명). 최대 처리량을 올리는 요인은 배치 insert.
-- **M4**: Redis 도입(어차피 `LatestStateLookup` 캐시용) → **같은 Redis가 캐시 + Streams 브로커** 두 일. 새 인프라 아님(§3.4 안 깸). 인메모리 큐 → Stream Consumer Group(`storage`) + `monitoring` 푸시로 승격.
+- **M4**: Redis 도입(어차피 `LatestStateLookup` 캐시용) → **같은 Redis가 캐시 + Streams 브로커** 두 역할. 새 인프라 아님(§3.4 안 깸). 인메모리 큐 → Stream Consumer Group(`storage`) + `monitoring` 푸시로 승격.
 - **M5**: 지오펜스 = 같은 Stream의 또 다른 Consumer Group.
 - **M6**: raw TTL·폰 강제 삭제/익명화·버퍼 PII 점검.
 - **페이즈2(M9~, 로봇)**: Mission Archive + 도메인 리플레이 경로(폰엔 미생성).

@@ -1,12 +1,12 @@
 # 작업 현황 (STATUS) — 진행의 단일 진실원
 
-> **이 문서 = 살아있는 진행 트래커** (뭘 끝냈고 / 지금 뭐 하고 / 다음에 뭐 할지 / 왜 그렇게 정했는지의 흔적).
+> **이 문서 = 살아있는 진행 트래커** (뭘 끝냈고 / 지금 뭐 하고 / 다음에 뭐 할지 / 왜 그렇게 정했는지의 기록).
 > 역할 분담 — 이 문서는 **상태**만. *왜·어디에* = [ROADMAP](ROADMAP.md), *수치·해석* = [measurements/](measurements/), *결정 이유(ADR)* = [decisions/](decisions/), *트리 매핑* = [STRUCTURE](STRUCTURE.md).
 > 범례: ✅ 완료 · 🔄 진행 중 · ⬜ 예정 · ⏸ 보류(다른 마일스톤) · 🚧 막힘(외부의존). 작업·결정 끝낼 때마다 여기 갱신(CLAUDE.md §7).
 
 ---
 
-## 🎯 현재 포커스 — M2 TimescaleDB 전환
+## 현재 포커스 — M2 TimescaleDB 전환
 
 | | |
 |---|---|
@@ -17,15 +17,15 @@
 
 ---
 
-## 🧭 포지셔닝 (2026-06-30 도메인 포지셔닝으로 갱신)
+## 포지셔닝 (2026-06-30 도메인 포지셔닝으로 갱신)
 
 **도메인: IoT/센서 텔레메트리 시계열 파이프라인** + 측정 주도 정체성 유지. 상세 SLO는 [ROADMAP §목표 SLO](ROADMAP.md).
 
-- **🦴 대상(깊게):** 적재 성능(M0→M1→**M2 TimescaleDB**) · 실시간(**M4 Redis+WebSocket**) · 수집 프로토콜(**M-MQTT**)
-- **🎬 조연:** M3 추상화 · M5 지오펜스 · M6 보안 · **M8 k8s** · 페이즈2 정합성
+- **핵심(깊게):** 적재 성능(M0→M1→**M2 TimescaleDB**) · 실시간(**M4 Redis+WebSocket**) · 수집 프로토콜(**M-MQTT**)
+- **보조:** M3 추상화 · M5 지오펜스 · M6 보안 · **M8 k8s** · 페이즈2 정합성
 - **다루지 않음:** GC/메모리 튜닝(I/O가 병목이라 비병목 — 측정 근거)
 
-**목표 데이터 흐름(북극성) ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)·[0008](decisions/0008-telemetry-store-timescaledb.md)):**
+**목표 데이터 흐름 ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)·[0008](decisions/0008-telemetry-store-timescaledb.md)):**
 ```
 Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순차 저장, 보존·압축 내장)
    (M4~) Redis Stream fan-out: ├ storage  ├ monitoring→WebSocket 푸시  └ geofence
@@ -36,11 +36,11 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 
 ---
 
-## 📌 결정 로그 (되돌리기 싼 결정은 ROADMAP 보류표, 확정은 해당 문서 + 여기 흔적)
+## 📌 결정 로그 (되돌리기 싼 결정은 ROADMAP 보류표, 확정은 해당 문서 + 여기 기록)
 
 | 날짜 | 결정 | 어디에 |
 |---|---|---|
-| 2026-06-28 | **성능 헤드라인 우선**(쓰기/읽기 두 경로 대상, 나머지 조연) | 이 문서 §포지셔닝 |
+| 2026-06-28 | **성능 헤드라인 우선**(쓰기/읽기 두 경로 대상, 나머지 보조) | 이 문서 §포지셔닝 |
 | 2026-06-28 | **M1 = fsync 분할 실험**(배치 insert·flush 설정·그룹 커밋, 결정적 지표=fsync/req) | [`M1.md`](measurements/M1.md) |
 | 2026-06-28 | **M2 = 인메모리 큐 배치**(외부 브로커 0). 최대 처리량은 싱크가 올린다, 큐 아님 | ROADMAP 매핑표 |
 | 2026-06-28 | **메시징/저장 아키텍처 확정**: fan-out 브로커=**Redis Streams**(Kafka 아님) · DeviceType별 보존·도달범위 · 리플레이 2종(운영/도메인) · 폰 장기경로 구조상 없음 | **[ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)** |
@@ -70,7 +70,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 
 ---
 
-## M0 — 모델·수집·조회·시뮬레이터·측정  ✅ (`m0` 태그)  🦴 쓰기경로 baseline
+## M0 — 모델·수집·조회·시뮬레이터·측정  ✅ (`m0` 태그)  쓰기경로 baseline
 ### 기반
 - [x] 프로젝트 스캐폴딩 (Gradle Kotlin DSL, Java 21, Spotless, **ArchUnit core 경계**, CI)
 - [x] ADR·STRUCTURE·ROADMAP·conventions·SECURITY 문서
@@ -98,61 +98,57 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 ### 측정 (2026-06-29 capacity·병목 확증 완료)
 - [x] **닫힌 baseline 3회 중앙값** (50VU, 2026-06-29): **36.5 req/s, p95 1.63s**, 에러 0% (닫힌>열린: group commit 효과)
 - [x] 환경 보강: RTT avg 0.81ms, 시작 행수 34,987
-- [x] **capacity 측정** — 포화점 **≈ 33** 1Hz 디바이스 (달성 처리량이 4회 런 모두 ~33으로 견고; 닫힌 32.9 포함). p95는 최대 처리량 위로 미느냐·정착에 따라 0.96s~30s 출렁 = 백로그 산물
+- [x] **capacity 측정** — 포화점 **≈ 33** 1Hz 디바이스 (달성 처리량이 4회 런 모두 ~33으로 견고; 닫힌 32.9 포함). p95는 최대 처리량 초과 여부·정착 상태에 따라 0.96s~30s로 변동 = 백로그로 인한 현상
 - [x] **병목 확증 = HDD fsync 3중 증거**: CPU 유휴(2~8%) + HikariCP pending + 디스크 %util 97%·f_await 25ms·f/s 39(iostat 194샘플 평균) → **최대 처리량이 계산으로 설명됨**(40 fsync/s ÷ ~1.2 fsync/req ≈ 33)
 - [x] [`measurements/M0.md`](measurements/M0.md) 수치·해석·스크린샷(`img/`) 기록 완성 + 원본 데이터 `M0-raw/`
 - [x] **커밋 + `m0` 태그** (`9e3142b` 측정 + `85170d5` 문서정리, 태그 재지정. 미푸시)
 
 ---
 
-## M1 — 적재 최대 처리량 높이기: fsync 분할  🔄  🦴 쓰기경로
-> 설계 완료 → [`measurements/M1.md`](measurements/M1.md). M0 병목(`단건 insert + 커밋당 fsync → ~33 req/s`)을 **MySQL 안에서 먼저** 짜낸다. Kafka 없음.
+## M1 — 적재 최대 처리량 높이기: fsync 분할  ✅  쓰기경로
+> 설계 완료 → [`measurements/M1.md`](measurements/M1.md). M0 병목(`단건 insert + 커밋당 fsync → ~33 req/s`)을 **MySQL 안에서 먼저** 개선한다. Kafka 없음.
 > **결정적 지표 = 요청당 fsync 횟수**(`Innodb_data_fsyncs` 델타 ÷ 요청 수) — 이게 줄며 최대 처리량 오르면 "병목=fsync" 인과 증명.
 - [x] 실험 *설계* 완료 (A0~A3·A2-x 비교군, 절차, 예상결과)
 - [x] **A1 측정** (flush=2): 포화점 33→**66**(~2×), log fsync/req 1.0→0.05 → **fsync 병목 인과 증명**. 원본 `M1-raw/`
 - [x] **A2 구현 완료**: `TelemetryIngestPort`(ADR 0004) + 인메모리 큐 + 배치 워커(SmartLifecycle) + `TelemetryBatchDao`(`JdbcTemplate.batchUpdate`). `mode=direct(기본)|queue`. green
-- [x] **A2 측정**: 포화점 **~1,437 req/s (A0 대비 ~44×)**, 내구성 유지(flush=1). data fsync/req 1.2→0.059. 3런(A2/A2b/A2c)으로 포화점 핀. 원본 `M1-raw/`
+- [x] **A2 측정**: 포화점 **~1,437 req/s (A0 대비 ~44×)**, 내구성 유지(flush=1). data fsync/req 1.2→0.059. 3런(A2/A2b/A2c)으로 포화점 확정. 원본 `M1-raw/`
 - [x] **A2-x 측정**: device-upsert OFF → 포화점 1,433(≈동일) → upsert는 교란 아님(batched upsert 효율적)
 - [x] **A3 측정**: 배치+flush=2 → 포화점 1,418(≈동일) → 배치 후 flush 무의미, redo 로그는 더는 병목 아님. **내구성 유지(A2) 최종 채택**. flush=1 복귀 확인
 - [x] M1.md 전체 기록 + 표준 용어 정리. (A2 measurements는 flush=1이었음 데이터로 검증)
-- [ ] 🚧 A2 측정 — 앱 배치(크기/지연 변수) → "그냥 배치"만으로 어디까지(내구성 유지)
-- [ ] 🚧 A3 측정 — A2+flush=2 합산 상한
-- [ ] 🚧 A2-x 측정 — Device upsert 분리(핫패스 UPDATE 교란변수 격리)
-- [ ] 🚧 병목 귀인 확증 — iostat %util + fsync/req 델타 + Grafana(CPU/HikariCP). *안 오르면* CPU/풀로 재귀인.
 - **게이트:** "배치만으로 최대 처리량 X배 + 그 한계(크래시 유실·DB다운·백프레셔)" 측정 → M2 정당화. 병목 이동 시 다음 후보(GC/HikariCP).
 
-## M2 — 배치 적재 (인메모리 큐)  ⬜  🦴 쓰기경로
+## M2 — 배치 적재 (인메모리 큐)  ⬜  쓰기경로
 > 외부 브로커 0 — 최대 처리량은 싱크(배치)가 올리지 큐가 아니다. fan-out 브로커(Redis Streams)는 두 번째 소비자 생기는 M4~ ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)).
 - [ ] 수집 출력 포트 `TelemetryIngestPort` 도입 (`InMemoryQueueIngest` → 나중 `RedisStreamIngest` 교체 이음새, [ADR 0004](decisions/0004-ports-only-at-improvement-seams.md))
 - [ ] 인메모리 큐 + 배치 워커 본구현 (M1 A2 승격) → 처리량 before/after
 - [ ] FK 제약 ON/OFF 처리량 측정 ([보류 결정](ROADMAP.md))
 - **게이트:** 적재 처리량 X배 + 인메모리 한계(크래시 유실·DB다운) 측정 기록, **인프라 0 추가**.
 
-## M3 — 추상화 검증 (디바이스 타입 추가)  ⬜  🎬 조연(집 불필요·즉시 가능)
+## M3 — 추상화 검증 (디바이스 타입 추가)  ⬜  보조(집 불필요·즉시 가능)
 - [ ] `TAG`/`ROBOT` 등 둘째 핸들러 추가 시 **`core` diff 0줄** 확인 (양축 추상화 검증, CLAUDE.md §2.2)
 
-## M4 — 실시간 푸시 · 최신상태 캐시 · 인증/식별 (Redis)  ⬜  🦴 읽기경로(+조연)
-> Redis 하나가 **캐시 + Streams 브로커** 두 일 → 새 인프라 0, §3.4 안 깸 ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)).
-- [ ] 🦴 `LatestStateLookup` 포트 + **Redis 캐시** (naive 최신조회 *before/after* — 읽기경로 헤드라인)
+## M4 — 실시간 푸시 · 최신상태 캐시 · 인증/식별 (Redis)  ⬜  읽기경로(+보조)
+> Redis 하나가 **캐시 + Streams 브로커** 두 역할 → 새 인프라 0, §3.4 안 깸 ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)).
+- [ ] `LatestStateLookup` 포트 + **Redis 캐시** (naive 최신조회 *before/after* — 읽기경로 헤드라인)
 - [ ] **Redis Streams 도입** — 인메모리 큐(M2) → Stream `storage` CG + `monitoring` CG. `XACK`/`XPENDING`/`XCLAIM`, 컨슈머 멱등성
 - [ ] WebSocket 실시간 푸시 (지도 폴링 → 푸시) ← **두 번째 소비자**(`monitoring` CG)
 - [ ] 인증/식별 (`app.auth`/`app.user`, 공통 Principal, Device≠User — [보류 결정](ROADMAP.md))
 - [ ] 디바이스 그루핑/스코핑
 
-## M5 — 도달/이탈 판정 엔진 (geofence)  ⬜  🎬 조연
+## M5 — 도달/이탈 판정 엔진 (geofence)  ⬜  보조
 - [ ] `core.engine` 판정(미션·타입 모름) + `GeofenceStateStore`
 - [ ] 텔레메트리 Stream의 `geofence` Consumer Group으로 판정 엔진 fan-out ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md))
 
-## M6 — 민감정보 보호 · 보존  ⬜  🎬 조연
+## M6 — 민감정보 보호 · 보존  ⬜  보조
 - [ ] 위치 암호화 컬럼 · 로그/덤프 평문 차단
 - [ ] **보존 정책**(raw TTL + 폰 강제삭제/익명화) — DeviceType별 거버넌스, 미성년 위치 영구보관 금지 ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md))
 - [ ] **버퍼 PII 점검** — Redis 영속화(RDB/AOF)·백업에 위치 묻어가는지, `XACK`/`XDEL` 즉시 정리 (ADR 0007 §점검)
 
-## M7 — 대용량 조회 · 복제  ⬜  🦴 읽기경로
-- [ ] recorded_at **시간 파티셔닝** + 커서 페이징 (오래된 파티션 drop = 보존 삭제 ≈ 공짜)
+## M7 — 대용량 조회 · 복제  ⬜  읽기경로
+- [ ] recorded_at **시간 파티셔닝** + 커서 페이징 (오래된 파티션 drop = 보존 삭제 비용 ≈ 0)
 - [ ] MySQL 읽기 복제 · 라우팅 데이터소스
 
-## M8 — 컨테이너 · k8s  ⬜  🎬 조연
+## M8 — 컨테이너 · k8s  ⬜  보조
 - [ ] Dockerfile · 이미지 빌드(CI) → 컨테이너화 비용 before/after
 - [ ] (선택) CD 자동화는 마일스톤 밖 — [보류 결정](ROADMAP.md)
 

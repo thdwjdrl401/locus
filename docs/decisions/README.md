@@ -7,7 +7,7 @@
 | [0001](0001-build-tool-gradle-kotlin-dsl.md) | 빌드 도구 | Gradle (Kotlin DSL) + wrapper, Java 21 toolchain |
 | [0002](0002-single-module-with-archunit.md) | 모듈 구조 | 멀티모듈 기각 → **단일 모듈 + ArchUnit**으로 경계 강제 |
 | [0003](0003-feature-slice-with-core-app-split.md) | 패키지 구조 | core/app 분리 + **기능별 슬라이스** (헥사고날 전면 채택 기각) |
-| [0004](0004-ports-only-at-improvement-seams.md) | 포트 사용 범위 | 헥사고날 포트를 **개선 이음새에만** 외과적으로 차용 |
+| [0004](0004-ports-only-at-improvement-seams.md) | 포트 사용 범위 | 헥사고날 포트를 **개선 이음새에만** 최소한으로 차용 |
 | [0005](0005-simulator-in-app-with-profile.md) | 시뮬레이터 위치 | 같은 앱 + `simulator` 프로파일 (별도 모듈 기각) |
 | [0006](0006-package-base-name.md) | 패키지 베이스 | `com.thdwjdrl.locus` |
 | [0007](0007-messaging-storage-redis-streams-and-governance.md) | 메시징/저장 | fan-out 브로커 **Redis Streams**(Kafka 아님) + **DeviceType별 보존·도달범위** + 리플레이 2종 + **MQTT 수집 전송** |
