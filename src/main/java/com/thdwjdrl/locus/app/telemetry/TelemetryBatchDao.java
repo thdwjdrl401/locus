@@ -10,9 +10,9 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -104,9 +104,14 @@ public class TelemetryBatchDao {
                 });
     }
 
-    /** 배치 안에서 디바이스별 가장 최근 receivedAt만 남겨 upsert(중복 UPDATE 낭비 제거). */
+    /**
+     * 배치 안에서 디바이스별 가장 최근 receivedAt만 남겨 upsert(중복 UPDATE 낭비 제거).
+     *
+     * <p>{@code TreeMap}으로 device_id 정렬 → 모든 워커가 device 행 락을 <b>같은 순서</b>로 잡는다 → 순환 대기 불가 = 데드락 0.
+     * (M2-par 다중 워커에서 device upsert가 서로 엇갈린 순서로 락을 잡아 `deadlock detected`로 배치가 버려지던 문제 수정.)
+     */
     private void upsertDevices(List<Telemetry> batch) {
-        Map<String, Telemetry> latestPerDevice = new LinkedHashMap<>();
+        Map<String, Telemetry> latestPerDevice = new TreeMap<>();
         for (Telemetry t : batch) {
             latestPerDevice.merge(
                     t.getDeviceId(),
