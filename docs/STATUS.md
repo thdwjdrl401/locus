@@ -11,8 +11,8 @@
 | | |
 |---|---|
 | **한 줄** | **방향 전환(2026-06-30)**: 도메인 포지셔닝(IoT 시계열 파이프라인)에 맞춰 로드맵 재정렬. M1(1,437)이 디스크 병목 측정 근거 → **다음 = M2 TimescaleDB 전환**(순차 저장 = PostgreSQL + 시계열 + 병목 해결). |
-| **방금 끝낸 것** | **M2 1차 측정** — TimescaleDB queue 모드 ~2,200 rows/s(≥1.5× MySQL), 디스크 미포화·랜덤→순차 확인. 단 **~2,200에서 HTTP 인테이크 붕괴**(스토리지 천장 가림) → Tomcat 커넥터 상향 커밋. |
-| **다음 한 걸음** | **인테이크 뚫고 재측정** — 박스 `git pull` + `somaxconn` 상향 + 재기동 + k6 → 디스크 100%=스토리지 진짜 천장. 그 후 M2.md 기록. 이어서 SLO(10k)=내구성 완화 마일스톤. |
+| **방금 끝낸 것** | **M2 측정 완료** — TimescaleDB **1,437 → 5,459 rows/s(~3.8×)**, durable. 디스크 병목 해소(피크 59%·순차 200KB), **병목이 단일 배치 워커로 이동**. `docs/measurements/M2.md` 기록. (~2,300 "붕괴"는 k6 타임스탬프 버그였음 — 정정·수정 완료.) |
+| **다음 한 걸음** | **워커 병렬화로 10k 향** — 배치 워커 N개 + 풀 N개 → 디스크 여유(59%)를 채워 SLO(10k) 도전. durable 유지 가능성. 측정으로 다음 병목 확인하며. |
 | **메모** | GC 튜닝 폐기(I/O가 병목이라 비병목, 측정 근거). SLO: 업링크 10k·조회 1만·다운링크 ~500. 측정 정체성 유지(키워드 아닌 측정 정당화). |
 
 ---
@@ -119,17 +119,20 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 - [x] M1.md 전체 기록 + 표준 용어 정리. (A2 measurements는 flush=1이었음 데이터로 검증)
 - **게이트:** "배치만으로 최대 처리량 X배 + 그 한계(크래시 유실·DB다운·백프레셔)" 측정 → M2 정당화. 병목 이동 시 다음 후보(GC/HikariCP).
 
-## M2 — TimescaleDB 전환 (순차 저장)  🔄  쓰기경로
+## M2 — TimescaleDB 전환 (순차 저장)  ✅  쓰기경로
 > M1 잔여 병목 = data fsync(InnoDB B-tree 랜덤 쓰기). 순차 쓰기로 푼다 = TimescaleDB 하이퍼테이블([ADR 0008](decisions/0008-telemetry-store-timescaledb.md)). 앱 전체 PostgreSQL 단일 교체, MySQL 제거.
 - [x] **코드 이식 완료**(`test`+`check` green): postgresql 드라이버·Flyway 도입 / Telemetry 복합 PK(device_id, recorded_at) `@IdClass` / `TelemetryBatchDao` `ON CONFLICT`+jsonb(`Types.OTHER`) / `DirectIngestWriter` `persist()`(409 보존) / docker-compose timescaledb / Testcontainers PG. core infra-free 유지(ArchUnit).
-- [x] **1차 측정(2026-06-30)**: queue 모드 ~2,200 rows/s까지 0 드롭·p95 1ms. **MySQL 1,437 대비 ≥1.5×, 디스크 ~88%(미포화)** → 랜덤→순차 효과 확인(평균 쓰기 크기↑). CPU 38%·HikariCP active=1·GC 무시.
-- [x] **진단 정정: ~2,300 "붕괴"는 시스템 한계가 아니라 k6 스크립트 버그**. Prometheus status별 조회로 실패=**400(CLIENT_ERROR)** 확인 → `@ValidTimestamp(미래 60s)`가 거절. 스크립트 `recorded_at=base+i`(1ms/iter)가 >1000 req/s에서 미래로 표류 → 윈도우 초과. **서버는 정상(미래 거절은 옳음)**. Tomcat 튜닝(a83c4a2)은 헛다리였음(무해라 유지). → `load/telemetry-capacity.js` 실제시각으로 수정.
-- [ ] 🚧 **수정 스크립트로 재측정** → 비로소 TimescaleDB 진짜 천장(디스크 100% 지점). 박스 변경 불필요, 맥에서 k6만 재실행.
-- [ ] 🚧 그 후 `docs/measurements/M2.md` 기록(before=1,437 / after=진짜 천장 / 병목 이동)
-- [x] PostgreSQL `shared_buffers=2GB` compose에 고정(MySQL buffer-pool 2G와 비교 가능하게) + `shared_preload_libraries=timescaledb`. 맥에서 확장 로드 검증 완료
-- [x] **디스크 메트릭 = node_exporter→Grafana**(박스 compose에 node-exporter 9100 + prometheus job `node`). iostat 로그 폐기 — 디스크도 Grafana로.
-- **측정이 답할 가설**: M1 한계가 *랜덤 액세스*였나 *HDD fsync 물리/엔진 차이*였나. TimescaleDB≫1,437이면 랜덤이 병목(구조가 풀었다), ≈1,437이면 랜덤 아님(이 규모선 throughput 이득 없음 — 정직 기록, 저장소는 보존·운영 결정). 소량·truncate라 파티셔닝 이점은 이 영역서 안 나올 수 있음(측정으로 확인).
-- **게이트:** before/after 포화점 + 디스크 패턴(평균 쓰기 크기·지연)으로 랜덤→순차 여부 판정. FK ON/OFF 측정은 보류([ROADMAP](ROADMAP.md)).
+- [x] **측정 완료(2026-06-30)**: 포화점 **1,437 → 5,459 rows/s(~3.8×)**, durable(synchronous_commit=on). 디스크 피크 **59%(미포화)** · 평균 쓰기 **200KB(순차)** → **랜덤→순차 확증, 디스크 병목 해소**. 포화=큐 9,000/10,000+드롭(우아). p95 654µs·0%. [M2.md](measurements/M2.md).
+- [x] **병목 이동 → 단일 배치 워커**(HikariCP active=1, 디스크 여유). 다음 마일스톤(워커 병렬화)으로 연결.
+- [x] **측정 함정 기록**: ~2,300 "붕괴"는 k6 `recorded_at=base+i` 미래 표류 → `@ValidTimestamp(60s)` 400. Prometheus status별 조회로 진단, 스크립트 실제시각으로 수정(서버 정상). 오진했던 Tomcat 상향(a83c4a2)은 무해라 유지.
+- [x] `shared_buffers=2GB`·`shared_preload_libraries=timescaledb` compose 고정 · 디스크 메트릭 node_exporter→Grafana(iostat 로그 폐기).
+- FK ON/OFF 처리량 측정은 보류([ROADMAP](ROADMAP.md)).
+
+## M2-par — 배치 워커 병렬화 (SLO 10k 향)  🔄  쓰기경로
+> M2에서 병목이 **단일 배치 워커**로 이동(디스크 59% 여유). 워커/커넥션을 병렬화해 디스크 여유를 채워 SLO(업링크 10k)에 도전. durable 유지 가능성 — 측정으로 확인.
+- [ ] 워커 N개 + HikariCP 풀 N개 (`locus.ingest.workers=N` 파라미터). 공유 큐 concurrent drainTo, 각자 커넥션.
+- [ ] 박스 N=1,2,4,8 측정 → 처리량 곡선 + 다음 병목(디스크 100%? CPU? PG 인덱스/device 행 락 경합?).
+- **게이트:** 5,459→? 측정 기록. 10k 도달 여부 + 다음 병목. 내구성 완화는 그래도 부족할 때만(별도 결정).
 
 ## M3 — 추상화 검증 (디바이스 타입 추가)  ⬜  보조(집 불필요·즉시 가능)
 - [ ] `TAG`/`ROBOT` 등 둘째 핸들러 추가 시 **`core` diff 0줄** 확인 (양축 추상화 검증, CLAUDE.md §2.2)
