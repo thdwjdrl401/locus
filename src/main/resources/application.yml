@@ -45,6 +45,15 @@ management:
 
 server:
   port: 8093
+  # 수집 인테이크 튜닝 — queue 모드에서 HTTP 요청은 큐에 넣고 즉시 202(빠름)라,
+  # 천장은 워커/스토리지여야 한다. 기본 커넥터 한계(M2 측정에서 ~2,200에 커넥션 레벨 붕괴)를 올려
+  # 인테이크가 측정의 교란변수가 되지 않게 한다.
+  tomcat:
+    threads:
+      max: 300 # 기본 200. 요청이 1ms라 충분.
+    accept-count: 4096 # 기본 100. 도착 버스트 흡수(박스 net.core.somaxconn도 같이 상향).
+    max-connections: 20000 # 기본 8192.
+    max-keep-alive-requests: -1 # 기본 100 → 무제한. 고RPS에서 커넥션 재사용(처닝·TIME_WAIT 회피).
 
 # 수집 적재 전략 (M1 fsync 분할 실험). 자세한 설명은 IngestProperties / measurements/M1.md.
 locus:
