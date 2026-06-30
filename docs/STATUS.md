@@ -123,7 +123,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 > M1 잔여 병목 = data fsync(InnoDB B-tree 랜덤 쓰기). 순차 쓰기로 푼다 = TimescaleDB 하이퍼테이블([ADR 0008](decisions/0008-telemetry-store-timescaledb.md)). 앱 전체 PostgreSQL 단일 교체, MySQL 제거.
 - [x] **코드 이식 완료**(`test`+`check` green): postgresql 드라이버·Flyway 도입 / Telemetry 복합 PK(device_id, recorded_at) `@IdClass` / `TelemetryBatchDao` `ON CONFLICT`+jsonb(`Types.OTHER`) / `DirectIngestWriter` `persist()`(409 보존) / docker-compose timescaledb / Testcontainers PG. core infra-free 유지(ArchUnit).
 - [ ] 🚧 박스 재측정 — k6 capacity, before=MySQL 1,437 → after=TimescaleDB. `docs/measurements/M2.md`(before/after/해석)
-- [ ] (측정 시) PostgreSQL `shared_buffers` 등을 MySQL buffer-pool 2G와 비교 가능하게 고정
+- [x] PostgreSQL `shared_buffers=2GB` compose에 고정(MySQL buffer-pool 2G와 비교 가능하게) + `shared_preload_libraries=timescaledb`. 맥에서 확장 로드 검증 완료
 - **게이트:** "랜덤→순차로 적재 포화점 변화" 측정 기록. FK ON/OFF 측정은 보류([ROADMAP](ROADMAP.md)).
 
 ## M3 — 추상화 검증 (디바이스 타입 추가)  ⬜  보조(집 불필요·즉시 가능)

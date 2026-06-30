@@ -25,6 +25,13 @@ services:
     # 앱(호스트 JVM)은 taskset -c 0-5 + -Xmx1500m로 같은 경계 안. 합 ≈ 6G ≤ 8G(스왑 회피).
     cpuset: "0-5"
     mem_limit: 3g
+    # 측정 튜닝: shared_buffers를 M0/M1의 MySQL buffer-pool 2G와 맞춰 비교 가능하게(엔진 외 변수 고정).
+    # shared_preload_libraries=timescaledb는 확장 로드 보장(Flyway CREATE EXTENSION 전제).
+    command:
+      - -c
+      - shared_preload_libraries=timescaledb
+      - -c
+      - shared_buffers=2GB
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
       interval: 10s
