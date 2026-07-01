@@ -10,16 +10,19 @@
 
 ## 요약
 
-| 쿼리 | 총 행수 | EXPLAIN Execution | 비고 |
+EXPLAIN 단일 조회:
+| 쿼리 | 행수 | Execution | 비고 |
 |---|---|---|---|
-| naive 상관 서브쿼리 | 1M | 8,748 ms | SubPlan `loops=1,000,000` (O(N²)), 전부 shared hit |
-| DISTINCT ON | 1M | 813 ms | 인덱스 순회(Incremental Sort ← Merge Append), shared hit |
-| DISTINCT ON | 5M | 6,431 ms | 동일 플랜, first-touch dirtied 60,560 |
-| DISTINCT ON | 10M | 1,438,707 ms (24분) | 플랜 전환: Parallel Seq Scan + Sort(external merge, temp ~3GB 디스크) |
+| ① naive 상관 서브쿼리 | 1M | 8,748 ms | SubPlan `loops=1,000,000`, 전부 shared hit |
+| ② DISTINCT ON | 1M | 813 ms | Incremental Sort ← Merge Append(인덱스), shared hit |
+| ② DISTINCT ON | 5M | 6,431 ms | 동일, first-touch dirtied 60,560 |
+| ② DISTINCT ON | 10M | 1,438,707 ms (24분) | 플랜 전환: Parallel Seq Scan + Sort(external merge, temp ~3GB) |
+| ③ LATERAL | 10M(org 1k) | 406 ms 웜 / 6,794 ms 콜드 | device당 PK 인덱스 1회(O디바이스). 콜드=random read 691 |
 
-| k6 (naive, 1k, 1M행) | p50 | p95 | 비고 |
-|---|---|---|---|
-| VUS=1 | 8.47s | 8.65s | 단일 조회 순수 지연 (9 req) |
-| VUS=20 | 36.08s | 47.58s | HikariCP active 16 포화·pending 4 (40 req) |
+k6 엔드포인트 p95:
+| 쿼리 | VUS=1 | VUS=20 |
+|---|---|---|
+| ① naive (1M, 전체) | 8.65s | 47.6s |
+| ③ LATERAL (org 1k, 10M) | **35 ms** | **236 ms** |
 
-해석·3단 서사(naive→DISTINCT ON→캐시)는 [../M4a.md](../M4a.md).
+결론: 쿼리를 결과 크기(O디바이스)에 맞춰(③ LATERAL) 8.65s→35ms(~250×), 캐시 없이. 해석은 [../M4a.md](../M4a.md).

@@ -29,3 +29,18 @@ M4a k6 원본 — GET /api/telemetry/latest (naive 상관 서브쿼리, 1k디바
 
 --> 서버 대시보드는 p95/p99를 30s로 잘라 표시(Micrometer http.server.requests 히스토그램 최대 버킷 ~30s).
     실제값은 k6(클라이언트) 신뢰: VUS=20 p95 47.6s. HikariCP active 16(풀 max) 포화 + pending 4.
+
+================================================================================
+[3] LATERAL fix (findLatestByOrg) — VUS=1, ORG=org-0 (10M 테이블, org 1k device)
+    LATEST_SOURCE=db, k6 -e ORG=org-0 -e VUS=1
+================================================================================
+  http_req_duration: avg=30.12ms  med=29.25ms  p(95)=35.46ms  max=504.72ms
+  http_reqs: 2314 (33/s), 실패 0%. data_received 975MB (~425KB/응답 = 1k device × 풀 텔레메트리)
+
+================================================================================
+[4] LATERAL fix — VUS=20, ORG=org-0
+================================================================================
+  http_req_duration: avg=130.18ms  med=126.72ms  p(90)=210.26ms  p(95)=235.89ms  max=453.56ms
+  http_reqs: 8493 (121/s), 실패 0%. 서버측 p99 323ms.
+--> naive(①) 8.65s / 47.6s  →  LATERAL(③) 35ms / 236ms.
+    완전 웜(수천 iter)이라 EXPLAIN 웜(406ms)보다 빠름. VUS=20 지연은 쿼리(30ms)보다 425KB 응답 전송·경합.

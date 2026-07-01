@@ -91,3 +91,18 @@ M4a EXPLAIN (ANALYZE, BUFFERS) 원본 — GET /api/telemetry/latest 쿼리
 --> 플랜 전환: 인덱스 경로 버리고 Parallel Seq Scan + 전체 Sort. 데이터 3GB > shared_buffers 2GB →
     shared read 197256(데이터도 디스크) + Sort가 work_mem 넘겨 external merge(temp ~3GB 디스크 spill).
     5400rpm HDD에서 24분. 5M→10M: 6.4s→1439s (2×데이터 225×지연). RAM 경계에서 급락.
+
+================================================================================
+[5] LATERAL (fix) — per-org(org-0, 1k device), 10M 테이블. findLatestByOrg
+    SELECT l.* FROM device d CROSS JOIN LATERAL (
+      SELECT * FROM telemetry t WHERE t.device_id = d.device_id
+      ORDER BY t.recorded_at DESC LIMIT 1) l WHERE d.org_id = 'org-0';
+================================================================================
+ Nested Loop  rows=1000 loops=1
+   ->  Bitmap Heap Scan on device (idx_device_org_id)  rows=1000
+   ->  Limit ← Custom Scan (ChunkAppend, Order recorded_at DESC)  rows=1 loops=1000
+         └ Index Scan Backward on _hyper_1_1_chunk (PK); chunk 2~5 never executed
+ 콜드: Buffers shared hit=3432 read=691  → Execution 6,794 ms (per-device 6.7ms)
+ 웜 : Buffers shared hit=3772 read=351  → Execution   406 ms (per-device 0.38ms)
+--> device당 PK 인덱스 1회 = O(디바이스). 콜드 느림은 흩어진 최신 행 random read(HDD).
+    k6 완전 웜(수천 iter)은 read≈0 → 35ms. ①②(전체 훑음)와 달리 결과 크기에 비례.

@@ -6,14 +6,14 @@
 
 ---
 
-## 현재 포커스 — M4a: Redis 캐시 코드 완성 → 박스 after 측정
+## 현재 포커스 — M4a 완료: 최신조회 쿼리 최적화 (8.7s → 35ms). 실시간은 M4b(push)
 
 | | |
 |---|---|
-| **한 줄** | **M4a 캐시 코드 완성(2026-07-02), after 측정 남음.** before: naive 8.7s@1M(O(N²) 결함) → `DISTINCT ON`(813ms) → 근데 O(전체행)(1M 0.81s→5M 6.4s→10M 24분, RAM 초과 급락). **캐시(O(디바이스))가 스케일 해법.** 조직 파티션(`latest:{orgId}`) 확정 — 전체=super-admin 스코프(스펙 #2대로, 글로벌로 틀자던 것 물림). |
-| **방금 끝낸 것** | M4a.md 초안·원본·스크린샷 커밋(`d641d43`). **Redis 캐시 코드**(로컬 test green): Redis 의존성 · `Device.orgId`+마이그레이션 V3 · `LatestStateLookup` 포트 · `RedisLatestStateLookup`(조직별 HASH, 미스 시 DB fallback) · `locus.read.latest-source` **db/cache 토글** · 쿼리서비스 스코프 파라미터(org=전체/조직) · docker-compose redis(영속화 off, PII) · 시더에 device+org(`-v orgs`) · k6 ORG 파라미터. |
-| **다음 한 걸음 [진행 중]** | **박스 after 측정**: git pull+재빌드(`down -v`, redis 포함) → 시드(`-v orgs=10`) → **통제 비교**: 스코프 고정(org-0), 서버 `LATEST_SOURCE=db`(per-org DISTINCT ON) vs `cache`(HGETALL) k6(VUS=1·20). 웜=lazy populate(ramp 버림). → M4a.md after 채워 완성. 그다음 **write-through**(배치워커=프로덕션 신선도)+부작용 측정 · **네이티브 쿼리 통합테스트**. |
-| **메모** | **per-org 쿼리 발견(2026-07-02)**: DISTINCT ON+JOIN은 전체 10M 훑어 >60s(k6 타임아웃) → **LATERAL(device당 PK 1회, O(디바이스))로 교체**. 근데 LATERAL도 **HDD에선 흩어진 최신 행 random read가 병목**(org-0 1k device 6.8s cold, `shared read=691`). → 서사 정교화: 캐시 승리 이유 = 최신을 **RAM에 응집해 HDD random read 제거**(쓰기경로 HDD 병목 테마 재현). 캐시 경로는 DB tx 미점유. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
+| **한 줄** | **M4a 완료(2026-07-02).** 최신조회는 쿼리 문제였다: naive 상관 서브쿼리(O(N²) 8.7s)·`DISTINCT ON`(O(전체행) 24분@10M) 둘 다 전체 행을 훑는 나쁜 쿼리 → **`LATERAL`(device당 PK 인덱스 1회, O(디바이스))로 8.65s→35ms(~250×), 캐시 없이.** 병목=결과는 디바이스 수만큼인데 일이 전체 행에 비례. |
+| **방금 끝낸 것** | LATERAL 측정: k6 `GET /latest?org=org-0` VUS=1 p95 **35ms**, VUS=20 **236ms**(0% 에러). `findLatestByOrg`→LATERAL(`4c2fe03`). `M4a.md` 쿼리최적화 서사로 재작성(①naive→②DISTINCT ON→③LATERAL) + 원본(M4a-raw). 문서 "정직" 라벨 제거(ADR 0008·STATUS). |
+| **다음 한 걸음** | **M4b — 실시간 push**: Redis Streams(인메모리 큐 → storage/monitoring CG) + WebSocket(폴링→push) + 접속 시 스냅샷 소스로 캐시. 캐시 코드(`LatestStateLookup`·`RedisLatestStateLookup`)는 있으나 read엔 불필요해 `latest-source=db`로 꺼둠 — push에서 켠다. 부수: **네이티브 쿼리(②③) 통합테스트**(현재 WebMvc 목킹만), 응답 경량 렌더셋(425KB↓). |
+| **메모** | 캐시 재평가: DB가 LATERAL로 35ms에 하니 **읽기 지연 때문엔 캐시 불필요**(이전 "DISTINCT ON 24분→캐시"는 나쁜 쿼리와 비교한 오류). 캐시 명분은 push 스냅샷 + 콜드/오프로드로 좁혀짐. LATERAL도 콜드 6.8s(HDD random read)/웜 35ms. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
 
 ---
 
@@ -136,7 +136,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 - [x] **둘째 병목 = device 행 락**: device upsert on은 워커 스케일 막힘(N=12 off 12.8k/디스크100% vs on 9k/디스크80%). device-on @10k는 큐 200k도 가득 차고 드롭(drain<10k 지속 deficit) → **device 분리(M4)가 10k에 필수** 측정 확정.
 - [x] **데드락 발견·수정**: 다중 워커 device upsert 도착순 락(LinkedHashMap) → `deadlock detected`. `TreeMap` device_id 정렬로 락 순서 통일(수정, `test` green).
 - [x] **10k 무손실 달성**: append-only N=16 + **큐 200k**(체크포인트 스톨 backlog ~12k 흡수) → 도착 10k dropped/s=0, durable, 단일 5400rpm HDD. 드롭 원인=배치 큐 용량(흡수 부족), 큐 사이징=worst스톨×유입×1.5~2.
-- [x] **폐기 시도(정직 기록)**: bgwriter 트리클(포화 디스크에서 WAL 경합 역효과, p95 3.5→199ms) / `checkpoint_timeout=15min`(테스트 창 밖으로 스톨 밀어내는 측정 함정) / 잘못 짚은 가설(CPU 과구독·N=8 과병렬·램프피크 조기 SLO 선언) → 평탄·격리 측정으로 정정.
+- [x] **폐기 시도**: bgwriter 트리클(포화 디스크에서 WAL 경합 역효과, p95 3.5→199ms) / `checkpoint_timeout=15min`(테스트 창 밖으로 스톨 밀어내는 측정 함정) / 잘못 짚은 가설(CPU 과구독·N=8 과병렬·램프피크 조기 SLO 선언) → 평탄·격리 측정으로 정정.
 - **게이트:** ✅ 단일 HDD 도착 10k 무손실(append-only) 측정 기록. SLO 10k 실경로화 = M4(device 상태 Redis 분리 + Streams 내구 버퍼).
 
 ## M3 — 추상화 검증 (디바이스 타입 추가)  ⬜  보조(집 불필요·즉시 가능)

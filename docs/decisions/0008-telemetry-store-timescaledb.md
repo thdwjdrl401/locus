@@ -38,8 +38,8 @@ Locus는 **관계형(Device·Mission·FK·JOIN·트랜잭션·JPA)과 시계열(
 5. **관계형 유지 + 단일 엔진** — Device·Mission 그대로, 이중 DB 회피, 운영·설정 단순.
 6. **스택 정합** — PostgreSQL 요구 충족 + 시계열 저장소 경험.
 
-## 트레이드오프 (정직 기록)
-- **조회 패턴**: 시계열 append·범위 스캔엔 강하나, "디바이스별 최신 단건"은 캐시(Redis, M4)가 맡는 게 낫다. 역할 분담(최신=Redis, 이력=TimescaleDB).
+## 트레이드오프
+- **조회 패턴**: 시계열 append·범위 스캔엔 강하다. "디바이스별 최신"은 device당 PK 인덱스 1회(LATERAL)로 O(디바이스)에 조회된다(M4a 측정 ~35ms/1k디바이스, [measurements/M4a.md](../measurements/M4a.md)). Redis 캐시는 최신을 못 해서가 아니라 실시간 push의 스냅샷 소스로 M4b에서.
 - **인프라**: MySQL→PostgreSQL 교체(추가 아님 — DB 개수 1 유지, §3.4 안 깸).
 - **마이그레이션**: 영속 계층 이식(엔티티 복합 PK·배치 DAO PostgreSQL 방언·Flyway 도입). `ddl-auto=update` → `validate` + Flyway.
 - **측정 해석**: MySQL과 PostgreSQL은 기본 설정(내구성·페이지 플러시 등)이 달라 엔진 1:1 벤치가 아니다. **"같은 워크로드에서 저장 구조를 랜덤→순차로 바꾼 효과"**로 해석한다. 단일 HDD 박스로 풀 10k 실측엔 못 미칠 수 있고, 가치는 측정된 변화이지 절대수치가 아니다.
