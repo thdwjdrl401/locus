@@ -38,6 +38,7 @@ locus/
 │
 └── docs/
     ├── decisions/             ADR (왜 이렇게 했나 + 기각된 대안)
+    ├── specs/                 마일스톤 착수 전 스펙 노트 (M4 실시간 읽기경로 ...)
     ├── measurements/          ← 계획서 §9: Mx별 before/after 수치
     ├── STRUCTURE.md           (이 문서)
     └── ROADMAP.md             마일스톤 → 트리 위치 매핑

@@ -25,7 +25,7 @@
 | **M0** | 모델·검증·시뮬레이터·측정 | `core.domain`, `app.telemetry`, `app.device`, `app.simulator` | MySQL | — |
 | **M1** | 적재 포화점 높이기(fsync 분할) ✅ | `app.telemetry`(인메모리 큐+배치), MySQL 설정, k6 | — | 수집 `TelemetryIngestPort`(A2) |
 | **M2** | **TimescaleDB 전환**(순차 저장) ★PostgreSQL+시계열 | `core.domain`/`app.telemetry` 영속 이식, `TelemetryBatchDao` | **TimescaleDB**(PostgreSQL 확장) | (배치 DAO 재사용) |
-| **M4** | **실시간: Redis 캐시 + WebSocket 푸시** ★WebSocket | `app.telemetry`/`device`, `app.config(Redis/WebSocket)` | **Redis**(캐시+Streams fan-out, [0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)) | `LatestStateLookup` |
+| **M4** | **실시간: Redis 캐시 + WebSocket 푸시** ★WebSocket ([스펙](specs/M4-realtime-read-path.md)) | `app.telemetry`/`device`, `app.config(Redis/WebSocket)` | **Redis**(캐시+Streams fan-out, [0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)) | `LatestStateLookup` |
 | **M-MQTT** | **MQTT 수집 경로** ★브로커 | `app.telemetry`(MQTT 수신 어댑터→기존 `IngestService` 합류) | **MQTT broker**(Mosquitto 등) | 수집 입구만 확장 |
 | **M3** | 추상화 검증(디바이스 타입) | `app.device`(둘째 핸들러), `core.strategy` enum | — | — |
 | **M5** | 도달/이탈 판정 엔진 | `core.engine`, `app.geofence`(신규) | (Redis Stream `geofence` CG) | `GeofenceStateStore` |
@@ -61,7 +61,7 @@
 |---|---|---|
 | 인증·식별 | **M4** | • 인증/식별은 **app 계층**(core 아님). • 보안 계층은 **공통 Principal**(디바이스·교사 둘 다 인증 주체). • 도메인은 **`Device` ≠ `User`** 분리. • 디바이스=장수명·폐기가능 토큰, 사람=단명 JWT+refresh, 즉시폐기는 Redis 블랙리스트(M6 민감성과 연결). • 세부(JWT vs opaque·토큰 수명·enrollment 모델)는 **M4에서**. |
 | `Device` enrollment 필드 | **M4** | M0엔 넣지 않는다(투기 금지). 인증 설계 때 컬럼 추가(`ddl-auto`로 비용 ≈ 0). |
-| 디바이스 **그루핑/스코핑** | **M4** | 관리자는 그룹 단위로 조회, super-admin은 역할로 전체. 모양은 `Group` 엔티티 + 멤버십(M:N 유력 — 한 디바이스를 여러 관리자/역할이 봄), `GET /api/devices`는 스코프 필터. **추가물이고 무거운 Telemetry 무관.** 정확한 모양(M:N vs 단일 FK)은 권한 규칙 정해지는 M4에 결정. |
+| 디바이스 **그루핑/스코핑** | **부분 확정(M4 스펙)** | **device→조직 = 1:N(`Device.orgId`) 확정** — 조직이 캐시 파티션·push 구독 키. 조직 이동 가능(드묾, 이동 명령에서 캐시 재파티션). **관리자↔조직 M:N + 권한 강제는 인증으로 보류**(super-admin 역할·`GET /api/devices` 스코프 필터 포함). "M:N 유력"은 device↔조직이 아니라 관리자↔조직 축이었음. 상세 [M4 스펙](specs/M4-realtime-read-path.md). |
 | Telemetry↔Device **FK 제약** | **M2** | M0는 FK 없이(deviceId 문자열, 앱 upsert가 정합성 유지). 벌크 적재에서 **FK 제약 ON/OFF 처리량을 측정**해 근거로 결정. 컬럼은 문자열 유지라 마이그레이션 비용 ≈ 0. |
 | **fan-out 브로커 + 보존·리플레이** | 단계: M2 / M4~M5 / 페이즈2 ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md) 확정) | **최대 처리량은 싱크(배치 insert)지 큐가 아니다**(M1 측정·YAGNI §3.4) → 처리량용 브로커 도입 금지. **단계**: ① M2 = **인메모리 큐 + 배치**(외부 브로커 0). ② 두 번째 소비자(M4 푸시/M5 지오펜스) 생기면 **fan-out 브로커 = Redis Streams**(Kafka 아님 — 같은 Redis가 캐시+Streams 두 역할, 새 인프라 0). Stream=단기 버퍼(MAXLEN), 보존·리플레이는 영속 계층. ③ Kafka는 **Redis Streams를 못 버틸 때**의 측정-게이트 전환. • **리플레이 2종**(운영=raw/단기/전타입, 도메인=미션아카이브/장기/로봇만). • **DeviceType이 데이터 도달범위+보존을 가른다**: 폰=장기 경로 **구조상 없음**(정책 아닌 구조로 위치 보존 최소화). 상세 전부 ADR 0007. |
 | **CD 자동화** | (마일스톤 아님 — 선택) | **측정 대상 밖**(p95 불변이라 before/after 서사 없음). M8이 컨테이너 이미지+레지스트리로 **기반만** 제공한다. 원칙: **빌드는 박스 밖**(CI/맥), **박스는 실행만**(박스 빌드는 안티패턴). 필요(배포 빈도↑) 생기면 추가: **self-hosted 러너로 배포잡만**(집 NAT 인바운드 0) + **헬스체크·자동 롤백** + **하위호환 마이그레이션**(Flyway). 측정 중엔 자동배포가 수치를 깨니 **수동/태그 트리거** 권장. |
