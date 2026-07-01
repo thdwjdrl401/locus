@@ -15,8 +15,8 @@ import org.springframework.data.jpa.repository.Query;
  * <p>복합 PK {@code (device_id, recorded_at)} — TimescaleDB 하이퍼테이블 파티션 키 포함 요건 충족. 직접 저장은 {@link
  * DirectIngestWriter}가 {@code EntityManager.persist()}로 수행(INSERT 강제, merge 회피).
  *
- * <p>조회는 모두 복합 PK 인덱스를 탄다. {@link #findLatestPerDevice()}는 naive 상관 서브쿼리 — 데이터가 커지면 느려질 수 있고, 그게 M4
- * {@code LatestStateLookup}(최신상태 캐시) 개선의 before 대상이다.
+ * <p>조회는 모두 복합 PK 인덱스를 탄다. {@link #findLatestPerDevice()}는 PostgreSQL {@code DISTINCT ON}으로 device별
+ * 최신 1행을 뽑는다 — 이전 상관 서브쿼리는 행마다 재실행돼 총 행수에 비례했다(부하·EXPLAIN으로 확인).
  */
 public interface TelemetryRepository extends JpaRepository<Telemetry, TelemetryId> {
 
@@ -26,9 +26,14 @@ public interface TelemetryRepository extends JpaRepository<Telemetry, TelemetryI
     /** 한 디바이스의 이력(최신순, offset 페이징 — 커서는 M7). */
     Page<Telemetry> findByDeviceIdOrderByRecordedAtDesc(String deviceId, Pageable pageable);
 
-    /** 디바이스별 최신 1프레임(관제 지도의 "전체 최신"). naive 상관 서브쿼리 — M4 캐시 도입 전의 기준 구현. */
+    /**
+     * 디바이스별 최신 1프레임(관제 지도). PostgreSQL DISTINCT ON — PK (device_id, recorded_at) 인덱스로 device별 최신
+     * 1행.
+     */
     @Query(
-            "SELECT t FROM Telemetry t WHERE t.recordedAt = "
-                    + "(SELECT MAX(t2.recordedAt) FROM Telemetry t2 WHERE t2.deviceId = t.deviceId)")
+            value =
+                    "SELECT DISTINCT ON (device_id) * FROM telemetry "
+                            + "ORDER BY device_id, recorded_at DESC",
+            nativeQuery = true)
     List<Telemetry> findLatestPerDevice();
 }

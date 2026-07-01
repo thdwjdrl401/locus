@@ -6,14 +6,14 @@
 
 ---
 
-## 현재 포커스 — M4a 착수: before 측정 (Redis 전 DB 최신조회 baseline)
+## 현재 포커스 — M4a before 측정: naive O(N²) 발견 → DISTINCT ON 수정, 스케일 곡선 진행
 
 | | |
 |---|---|
-| **한 줄** | **M4a(실시간 읽기경로) 착수(2026-07-01)**. 스펙 6개 확정([M4 스펙](specs/M4-realtime-read-path.md)) → 먼저 **Redis 도입 전 DB-only 최신조회 성능(before)**을 잰다: `GET /api/telemetry/latest`(상관 서브쿼리)의 디바이스 수(1k/5k/10k)별 p50/p95/p99. Redis 결정은 push(스냅샷 소스)가 이미 정당화 — 측정은 효과 기록용이지 결정용 아님(최적 DB쿼리 strawman baseline 안 함). |
-| **방금 끝낸 것** | M2 닫음(V2 `ce0820e` + M4 스펙 `41b7a1f`). **M4a 스펙 #1~#6 확정**: push · 조직 스코프(device→org 1:N) · 오프라인 지도 유지 · 캐시 렌더셋 · 조직별 단일 HASH · 측정 설계. **before 측정 도구 작성**: `load/seed-latest-dataset.sql`(N디바이스×M행 벌크 시더, 결정적) · `load/telemetry-latest-read.js`(GET /latest 읽기 k6) · `monitoring/.../locus-m4a-read.json`(읽기 대시보드 — 지연 p95/p99·HikariCP·디스크읽기). |
-| **다음 한 걸음 [진행 중]** | **박스에서 before 측정 실행**: 스케일마다 `TRUNCATE telemetry` → 시드(1k/5k/10k × 1,000행) → 읽기 k6(VUS=1 순수지연, VUS=20 동시성) → p50/p95/p99 + Grafana(디스크읽기·HikariCP·CPU) 기록(3회 중앙값·steady-state). 그다음 **Redis 도입 + 캐시**(조직별 HASH, write-through, `LatestStateLookup` 포트, `orgId`) → after 측정 + write-through 부작용 → `docs/measurements/M4a.md`. docker-compose에 redis 점증(M4). |
-| **메모** | before 측정: 디바이스당 N행(=1,000) 정확값 비민감(빈 테이블만 아니면 서브쿼리가 실제 최신을 뒤짐). 캐시 비용은 이력 깊이 무관(최신 1건). V2 교훈(유지): 단일 포화 HDD에선 경쟁 I/O가 drain 굶김, 압축 재도입은 전용 디스크/SSD 생길 때. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
+| **한 줄** | **M4a before 측정 진행(2026-07-01)**. naive 상관 서브쿼리 = **8.7s @ 1k디바이스×1k행(100만 행)** — EXPLAIN상 서브쿼리가 **행마다 100만 loops**(O(N²) 병리 플랜, 디스크 아닌 CPU 바운드) = 현재 코드 결함. **`DISTINCT ON`으로 수정 → 813ms(10.7×)**. 근데 플랜이 100만 행 전부 읽어 **O(전체행) 유지**(SkipScan 미적용) → 총행수(디바이스×이력)에 여전히 degrade. → **캐시는 두 이유로 정당: (1) 읽기 스케일 O(디바이스) vs O(전체행) (2) push 스냅샷.** |
+| **방금 끝낸 것** | before 도구 작성·푸시(`553b263`·`da0590b`). 박스 측정(1k): naive k6 VUS=1 p95 **8.65s**, VUS=20 **47.6s**(HikariCP 16 포화). EXPLAIN=`loops=1000000`·전부 `shared hit`(CPU). **fix**: `findLatestPerDevice` JPQL 상관 서브쿼리 → **네이티브 `DISTINCT ON (device_id)`**. DISTINCT ON EXPLAIN **813ms**(단 1M행 전부 스캔·SkipScan 안 탐). 로컬 `spotlessApply test` green — **단 네이티브 쿼리 실DB 통합테스트 부재 = 갭**. |
+| **다음 한 걸음 [진행 중]** | **DISTINCT ON 5k/10k 측정**: 스케일마다 `TRUNCATE`→시드→EXPLAIN(0.81s→~4s→~8s degrade 곡선 실증 = 쿼리픽스도 스케일 안 함) + endpoint k6. 그다음 **Redis 캐시**(조직별 HASH `latest:{orgId}`, 배치워커 write-through, `LatestStateLookup` 포트, `orgId` 컬럼) = after(스케일 무관 평평) + write-through 부작용 → `docs/measurements/M4a.md`(3단: naive→DISTINCT ON→캐시). **네이티브 쿼리 통합테스트 추가.** docker-compose redis 점증. |
+| **메모** | naive O(N²)·DISTINCT ON O(전체행) **둘 다 총행수 비례**(디바이스 아니라 device×이력). 캐시 O(디바이스)가 스케일 해법. "1k에서 깨진다"는 부정확 — 트리거는 총행수(1Hz ~17분에 1M행). 캐시 비용은 이력 깊이 무관. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
 
 ---
 
