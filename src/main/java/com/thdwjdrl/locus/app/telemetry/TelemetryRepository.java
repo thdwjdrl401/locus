@@ -16,8 +16,9 @@ import org.springframework.data.repository.query.Param;
  * <p>복합 PK {@code (device_id, recorded_at)} — TimescaleDB 하이퍼테이블 파티션 키 포함 요건 충족. 직접 저장은 {@link
  * DirectIngestWriter}가 {@code EntityManager.persist()}로 수행(INSERT 강제, merge 회피).
  *
- * <p>조회는 모두 복합 PK 인덱스를 탄다. {@link #findLatestPerDevice()}는 PostgreSQL {@code DISTINCT ON}으로 device별
- * 최신 1행을 뽑는다 — 이전 상관 서브쿼리는 행마다 재실행돼 총 행수에 비례했다(부하·EXPLAIN으로 확인).
+ * <p>조회는 모두 복합 PK 인덱스를 탄다. {@link #findLatestPerDevice()}·{@link #findLatestByOrg(String)}는 device당
+ * PK 인덱스 1회(LATERAL)로 최신을 집는다 = O(디바이스). 상관 서브쿼리(O(N²))·DISTINCT ON(O(전체행))은 전체를 훑어 규모에서
+ * 급락했다(M4a.md).
  */
 public interface TelemetryRepository extends JpaRepository<Telemetry, TelemetryId> {
 
@@ -28,13 +29,16 @@ public interface TelemetryRepository extends JpaRepository<Telemetry, TelemetryI
     Page<Telemetry> findByDeviceIdOrderByRecordedAtDesc(String deviceId, Pageable pageable);
 
     /**
-     * 디바이스별 최신 1프레임(관제 지도). PostgreSQL DISTINCT ON — PK (device_id, recorded_at) 인덱스로 device별 최신
-     * 1행.
+     * 디바이스별 최신 1프레임(관제 지도 전체 = super-admin). device당 PK 인덱스 1회(LATERAL) = O(디바이스). DISTINCT ON은 전체
+     * 행을 훑어 규모에서 급락(10M에서 24분, M4a.md)했으므로 대체. 전체(수만 대)면 device 수만큼이라 무거움 — 스코프 조회 권장.
      */
     @Query(
             value =
-                    "SELECT DISTINCT ON (device_id) * FROM telemetry "
-                            + "ORDER BY device_id, recorded_at DESC",
+                    "SELECT l.* FROM device d "
+                            + "CROSS JOIN LATERAL ("
+                            + "  SELECT * FROM telemetry t WHERE t.device_id = d.device_id "
+                            + "  ORDER BY t.recorded_at DESC LIMIT 1"
+                            + ") l",
             nativeQuery = true)
     List<Telemetry> findLatestPerDevice();
 

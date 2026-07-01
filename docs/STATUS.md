@@ -6,14 +6,14 @@
 
 ---
 
-## 현재 포커스 — M4b(A) 실시간 WebSocket push 뼈대 완성 → 박스 데모·측정
+## 현재 포커스 — M4b(A) 실시간 push 박스 검증 완료 → B(Redis Streams)
 
 | | |
 |---|---|
-| **한 줄** | **M4b 착수 — A(WebSocket push 뼈대) 완성(2026-07-02, 로컬 test green).** 지도 폴링 → **스냅샷(REST LATERAL) + STOMP 조직 토픽 델타 push**. Streams(B)는 소스만 바뀌게 **소스무관 포트**(`LiveUpdatePublisher`)로 설계 — A→B에 WebSocket 층 재사용. Streams는 포트폴리오 목표라 A 직후 B(walking skeleton→강화). |
-| **방금 끝낸 것** | WebSocket 의존성 · STOMP 설정(`WebSocketConfig`, `/topic/org/{orgId}`) · `LiveUpdatePublisher` 포트 + `WebSocketLiveUpdatePublisher` · `DirectIngestWriter` 커밋후 org-스코프 push(afterCommit, org 없으면 스킵) + 테스트 2 · 지도 `index.html` STOMP 재작성(스냅샷+구독). M4a 완료(쿼리 `LATERAL` 8.65s→35ms, `M4a.md`). |
-| **다음 한 걸음** | **박스 실시간 데모**: device를 org와 함께 시드(시뮬레이터 ID 매칭) → 시뮬레이터(direct) → 지도 마커 실시간 이동 확인 → **push 지연·부하 측정(vs 폴링)**. 그다음 **B(Redis Streams)**: 인메모리 큐 → Stream `storage`/`monitoring` CG, XACK/XPENDING/XCLAIM·멱등·크래시 복구. 부수: queue-mode push, 네이티브 쿼리(②③) 통합테스트. |
-| **메모** | push는 **org 있는 디바이스만** 발사(라우팅 대상). 시뮬레이터 신규 디바이스는 org 없음 → 데모 전 device 시드 필요. A→B = push 소스만 교체(배치워커 인프로세스 → Stream 컨슈머), WebSocket·포트 그대로. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
+| **한 줄** | **A(WebSocket 실시간 push) 박스 검증 완료(2026-07-02).** 지도 폴링 → 스냅샷(REST LATERAL) + STOMP 조직 토픽 델타 push. 마커 실시간 이동 확인. WebSocket 정상(nginx `Upgrade` 헤더 프록시 수정 — 없으면 SockJS HTTP 폴백). 소스무관 포트(`LiveUpdatePublisher`)라 B에서 WebSocket 층 재사용. |
+| **방금 끝낸 것** | A 데모 검증(시뮬레이터 실시간 이동). direct 모드 **풀 고갈** 겪음 = B 필요 실증(push를 적재 핫패스에 두면 HDD ~33 req/s 한계, 50대 시뮬레이터가 커넥션 16 고갈). **`findLatestPerDevice`(전체)도 LATERAL** — org 없는 `/latest` = DISTINCT ON 10M = 24분 지뢰(오늘 풀 고갈·truncate 블록 진범) 제거. WebSocketConfig·`LiveUpdatePublisher`+WS 구현·`DirectIngestWriter` 커밋후 push·`index.html` STOMP. |
+| **다음 한 걸음** | **B(Redis Streams)**: 인메모리 큐 → Stream `storage`/`monitoring` CG, `XACK`/`XPENDING`/`XCLAIM`·멱등·크래시 복구. **push를 `monitoring` 컨슈머로 이동**(적재 핫패스와 분리 → 고처리량 적재 + push 공존, 오늘 풀 고갈의 근본 해결). 부수: push 지연 측정, 네이티브 쿼리(LATERAL) 통합테스트. |
+| **메모** | direct 모드 push는 HDD ~33 req/s 한계 — 50대 시뮬레이터가 풀 고갈시킴(적재 핫패스에 push+fsync). B의 Stream 분리가 답. push는 **org 있는 디바이스만**(시뮬레이터 신규는 org 없음 → `UPDATE device SET org_id` 필요). A→B = push 소스만 교체(인프로세스 → Stream 컨슈머). SLO: 업링크 10k·조회 1만·다운링크 ~500. |
 
 ---
 
