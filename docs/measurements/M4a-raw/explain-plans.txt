@@ -1,0 +1,93 @@
+M4a EXPLAIN (ANALYZE, BUFFERS) 원본 — GET /api/telemetry/latest 쿼리
+박스 TimescaleDB 2.17.2-pg16, shared_buffers 2GB, 청크 5분. 데이터셋 = N디바이스 × 1,000행.
+
+================================================================================
+[1] naive 상관 서브쿼리 — 1M행 (1k디바이스 × 1k행)
+    SELECT t.* FROM telemetry t
+    WHERE t.recorded_at = (SELECT MAX(t2.recorded_at) FROM telemetry t2 WHERE t2.device_id = t.device_id);
+================================================================================
+ Append  (cost=0.00..481332.00 rows=5000 width=302) (actual time=0.072..8739.863 rows=1000 loops=1)
+   Buffers: shared hit=3041668
+   ->  Seq Scan on _hyper_1_1_chunk t_1  (cost=0.00..25028.28 rows=260 width=302) (actual time=0.072..455.554 rows=1000 loops=1)
+         Filter: (recorded_at = (SubPlan 2))
+         Rows Removed by Filter: 51000
+         Buffers: shared hit=158168
+         SubPlan 2
+           ->  Result  (cost=0.42..0.43 rows=1 width=8) (actual time=0.008..0.008 rows=1 loops=1000000)
+                 Buffers: shared hit=3000001
+                 InitPlan 1 (returns $1)
+                   ->  Limit  (cost=0.41..0.42 rows=1 width=8) (actual time=0.008..0.008 rows=1 loops=1000000)
+                         Buffers: shared hit=3000001
+                         ->  Custom Scan (ChunkAppend) on telemetry t2  (cost=0.41..2.56 rows=52 width=8) (actual time=0.007..0.007 rows=1 loops=1000000)
+                               Order: t2.recorded_at DESC
+                               Hypertables excluded during runtime: 0
+                               Buffers: shared hit=3000001
+                               ->  Index Only Scan Backward using "1_1_telemetry_pkey" on _hyper_1_1_chunk t2_1 (actual time=0.006..0.006 rows=1 loops=1000000)
+                                     Index Cond: ((device_id = (t_1.device_id)::text) AND (recorded_at IS NOT NULL))
+                                     Heap Fetches: 0
+                                     Buffers: shared hit=3000001
+                               ->  Index Only Scan Backward using "2_2_telemetry_pkey" on _hyper_1_2_chunk t2_2 (never executed)
+                               ->  Index Only Scan Backward using "3_3_telemetry_pkey" on _hyper_1_3_chunk t2_3 (never executed)
+                               ->  Index Only Scan Backward using "4_4_telemetry_pkey" on _hyper_1_4_chunk t2_4 (never executed)
+                               ->  Index Only Scan Backward using "5_5_telemetry_pkey" on _hyper_1_5_chunk t2_5 (never executed)
+   ->  Seq Scan on _hyper_1_2_chunk t_2 (actual time=2642.083..2642.084 rows=0 loops=1)  Rows Removed by Filter: 300000  Buffers: shared hit=912500
+   ->  Seq Scan on _hyper_1_3_chunk t_3 (actual time=2619.129..2619.129 rows=0 loops=1)  Rows Removed by Filter: 300000  Buffers: shared hit=912500
+   ->  Seq Scan on _hyper_1_4_chunk t_4 (actual time=2610.501..2610.502 rows=0 loops=1)  Rows Removed by Filter: 300000  Buffers: shared hit=912500
+   ->  Seq Scan on _hyper_1_5_chunk t_5 (actual time=412.500..412.500 rows=0 loops=1)    Rows Removed by Filter: 48000   Buffers: shared hit=146000
+ Planning: Buffers: shared hit=1220
+ Planning Time: 7.370 ms
+ Execution Time: 8748.177 ms
+--> 핵심: SubPlan 2가 loops=1000000 (행마다 재실행). 전부 shared hit(디스크 0). CPU 바운드.
+
+================================================================================
+[2] DISTINCT ON — 1M행 (1k디바이스 × 1k행)
+    SELECT DISTINCT ON (device_id) * FROM telemetry ORDER BY device_id, recorded_at DESC;
+================================================================================
+ Unique  (cost=135.71..148579.95 rows=1000 width=302) (actual time=0.945..812.928 rows=1000 loops=1)
+   Buffers: shared hit=51106
+   ->  Incremental Sort  (cost=135.71..146079.95 rows=1000000 width=302) (actual time=0.944..738.648 rows=1000000 loops=1)
+         Sort Key: _hyper_1_1_chunk.device_id, _hyper_1_1_chunk.recorded_at DESC
+         Presorted Key: _hyper_1_1_chunk.device_id
+         Full-sort Groups: 1000  Pre-sorted Groups: 1000  Sort Method: quicksort
+         Buffers: shared hit=51106
+         ->  Merge Append  (cost=2.16..83731.03 rows=1000000 width=302) (actual time=0.131..287.321 rows=1000000 loops=1)
+               Sort Key: _hyper_1_1_chunk.device_id
+               (청크별 Index Scan using *_telemetry_pkey; 전부 shared hit)
+ Planning Time: 6.527 ms
+ Execution Time: 813.204 ms
+--> 인덱스 순회 + 증분정렬 + Unique. 1M행 전부 읽지만 한 패스. 전부 shared hit.
+
+================================================================================
+[3] DISTINCT ON — 5M행 (5k디바이스 × 1k행)
+================================================================================
+ Unique  (cost=137.21..750482.70 rows=5002 width=303) (actual time=8.308..6430.606 rows=5000 loops=1)
+   Buffers: shared hit=5035296 dirtied=60560
+   ->  Incremental Sort  (rows=5000000) (actual time=8.307..6007.259 rows=5000000 loops=1)
+         Presorted Key: device_id  Sort Method: quicksort
+         Buffers: shared hit=5035296 dirtied=60560
+         ->  Merge Append  (rows=5000000) (actual time=0.251..3374.218)
+               (청크별 Index Scan; shared hit=5035293, dirtied=60560)
+ Planning Time: 41.623 ms
+ Execution Time: 6431.436 ms
+--> 동일 플랜, 여전히 shared hit. first-touch dirtied 60560(벌크 시드 직후 hint-bit). 1M→5M: 0.81s→6.4s.
+
+================================================================================
+[4] DISTINCT ON — 10M행 (10k디바이스 × 1k행)
+================================================================================
+ Unique  (cost=1609270.81..2817335.08 rows=9978 width=303) (actual time=1149445.276..1438522.789 rows=10000 loops=1)
+   Buffers: shared hit=219606 read=197256 dirtied=20187 written=17575, temp read=1174951 written=1176329
+   ->  Gather Merge  (rows=9999998) (actual time=1149444.898..1435138.127 rows=10000000 loops=1)
+         Workers Planned: 3  Workers Launched: 3
+         ->  Sort  (rows=3225806) (actual time=1041139.630..1124788.526 rows=2500000 loops=4)
+               Sort Key: device_id, recorded_at DESC
+               Sort Method: external merge  Disk: 1001952kB
+               Worker 0: external merge Disk: 933824kB / Worker 1: 588656kB / Worker 2: 608808kB
+               ->  Parallel Append  (rows=3225806) (actual time=0.019..180067.285 rows=2500000 loops=4)
+                     ->  Parallel Seq Scan on _hyper_1_12_chunk (read=114874 written=16086 ...)
+                     ->  Parallel Seq Scan on _hyper_1_13_chunk (read=82382 ...)
+                     ->  Parallel Seq Scan on _hyper_1_14~15, _11 ...
+ Planning Time: 766.101 ms
+ Execution Time: 1438707.564 ms   (= 약 24분)
+--> 플랜 전환: 인덱스 경로 버리고 Parallel Seq Scan + 전체 Sort. 데이터 3GB > shared_buffers 2GB →
+    shared read 197256(데이터도 디스크) + Sort가 work_mem 넘겨 external merge(temp ~3GB 디스크 spill).
+    5400rpm HDD에서 24분. 5M→10M: 6.4s→1439s (2×데이터 225×지연). RAM 경계에서 급락.

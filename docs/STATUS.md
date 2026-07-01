@@ -6,14 +6,14 @@
 
 ---
 
-## 현재 포커스 — M4a before 측정: naive O(N²) 발견 → DISTINCT ON 수정, 스케일 곡선 진행
+## 현재 포커스 — M4a: naive→DISTINCT ON 스케일 곡선 완료 → Redis 캐시 착수
 
 | | |
 |---|---|
-| **한 줄** | **M4a before 측정 진행(2026-07-01)**. naive 상관 서브쿼리 = **8.7s @ 1k디바이스×1k행(100만 행)** — EXPLAIN상 서브쿼리가 **행마다 100만 loops**(O(N²) 병리 플랜, 디스크 아닌 CPU 바운드) = 현재 코드 결함. **`DISTINCT ON`으로 수정 → 813ms(10.7×)**. 근데 플랜이 100만 행 전부 읽어 **O(전체행) 유지**(SkipScan 미적용) → 총행수(디바이스×이력)에 여전히 degrade. → **캐시는 두 이유로 정당: (1) 읽기 스케일 O(디바이스) vs O(전체행) (2) push 스냅샷.** |
-| **방금 끝낸 것** | before 도구 작성·푸시(`553b263`·`da0590b`). 박스 측정(1k): naive k6 VUS=1 p95 **8.65s**, VUS=20 **47.6s**(HikariCP 16 포화). EXPLAIN=`loops=1000000`·전부 `shared hit`(CPU). **fix**: `findLatestPerDevice` JPQL 상관 서브쿼리 → **네이티브 `DISTINCT ON (device_id)`**. DISTINCT ON EXPLAIN **813ms**(단 1M행 전부 스캔·SkipScan 안 탐). 로컬 `spotlessApply test` green — **단 네이티브 쿼리 실DB 통합테스트 부재 = 갭**. |
-| **다음 한 걸음 [진행 중]** | **DISTINCT ON 5k/10k 측정**: 스케일마다 `TRUNCATE`→시드→EXPLAIN(0.81s→~4s→~8s degrade 곡선 실증 = 쿼리픽스도 스케일 안 함) + endpoint k6. 그다음 **Redis 캐시**(조직별 HASH `latest:{orgId}`, 배치워커 write-through, `LatestStateLookup` 포트, `orgId` 컬럼) = after(스케일 무관 평평) + write-through 부작용 → `docs/measurements/M4a.md`(3단: naive→DISTINCT ON→캐시). **네이티브 쿼리 통합테스트 추가.** docker-compose redis 점증. |
-| **메모** | naive O(N²)·DISTINCT ON O(전체행) **둘 다 총행수 비례**(디바이스 아니라 device×이력). 캐시 O(디바이스)가 스케일 해법. "1k에서 깨진다"는 부정확 — 트리거는 총행수(1Hz ~17분에 1M행). 캐시 비용은 이력 깊이 무관. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
+| **한 줄** | **M4a before+쿼리수정 측정 완료(2026-07-01~02)**. naive 상관 서브쿼리 = **8.7s @ 1M행**(EXPLAIN `loops=1000000`, O(N²), CPU 바운드) = 코드 결함 → **`DISTINCT ON` 수정(813ms, 10.7×)**. 근데 DISTINCT ON도 **O(전체행)**: 1M 0.81s → 5M 6.4s → **10M 24분**(RAM 초과로 플랜 전환+디스크 정렬, 2×데이터 225×지연 급락). → **캐시(O(디바이스))가 스케일 해법 + push 스냅샷 — 두 이유로 정당, 완전히 못박힘.** |
+| **방금 끝낸 것** | before 도구·fix 커밋(`cd06ecb`). **DISTINCT ON 스케일 곡선 3점**(EXPLAIN): 1M **813ms** → 5M **6,431ms** → 10M **1,438,707ms(24분, external merge 디스크 spill ~3GB)**. naive 1k도 측정(k6 VUS=1 p95 8.65s, VUS=20 47.6s). **`docs/measurements/M4a.md` 초안** 작성(naive→DISTINCT ON→캐시 3단, 함정·갭 명시). |
+| **다음 한 걸음 [진행 중]** | **Redis 캐시 착수**(after): ① docker-compose redis 점증 ② `orgId` + `LatestStateLookup` 포트 ③ `RedisLatestStateLookup`(조직별 HASH `latest:{orgId}`, 배치워커 write-through, 미스 시 DB fallback) ④ 쿼리서비스 포트 경유(토글 before/after) ⑤ after 측정(스케일 무관 평평) + write-through 부작용 → M4a.md 완성. **네이티브 쿼리 통합테스트 추가**(현재 갭). |
+| **메모** | naive O(N²)·DISTINCT ON O(전체행) 둘 다 총행수 비례(디바이스 아니라 device×이력). RAM(shared_buffers 2GB) 넘으면 플랜 전환+디스크 정렬로 급락(10M=24분). 캐시 O(디바이스)만 이력 무관. "1k에서 깨진다"는 부정확 — 트리거는 총행수. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
 
 ---
 

@@ -1,0 +1,31 @@
+M4a k6 원본 — GET /api/telemetry/latest (naive 상관 서브쿼리, 1k디바이스 × 1k행 = 1M행)
+스크립트: load/telemetry-latest-read.js (닫힌 모델). 박스 8093. 3스테이지(20s ramp / 40s hold / 10s down).
+
+================================================================================
+[1] VUS=1 — 순수 per-query 지연
+    k6 run -e BASE_URL=http://192.168.219.124:8093 -e VUS=1 load/telemetry-latest-read.js
+================================================================================
+  THRESHOLDS
+    http_req_duration: p(95)=8.65s  ✗ (마커 p95<2000)
+    http_req_failed:   rate=0.00%   ✓
+
+  http_req_duration: avg=8.5s min=8.42s med=8.47s max=8.73s p(90)=8.58s p(95)=8.65s
+  http_reqs:         9  (0.11761/s)
+  checks: status is 200 = 100% (9/9)
+  data_received: 3.8 MB (50 kB/s)  → ~425 KB/응답 (약 1000 디바이스분)
+
+================================================================================
+[2] VUS=20 — 동시성 하 열화
+    k6 run -e BASE_URL=http://192.168.219.124:8093 -e VUS=20 load/telemetry-latest-read.js
+================================================================================
+  THRESHOLDS
+    http_req_duration: p(95)=47.58s  ✗
+    http_req_failed:   rate=0.00%    ✓
+
+  http_req_duration: avg=35.2s min=13.55s med=36.08s max=49.23s p(90)=45.11s p(95)=47.58s
+  http_reqs:         40  (0.442373/s)
+  checks: status is 200 = 100% (40/40)
+  data_received: 17 MB (186 kB/s)
+
+--> 서버 대시보드는 p95/p99를 30s로 잘라 표시(Micrometer http.server.requests 히스토그램 최대 버킷 ~30s).
+    실제값은 k6(클라이언트) 신뢰: VUS=20 p95 47.6s. HikariCP active 16(풀 max) 포화 + pending 4.
