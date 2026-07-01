@@ -6,14 +6,14 @@
 
 ---
 
-## 현재 포커스 — M2-par 통제 재측정 완료
+## 현재 포커스 — 지속 10k 측정 완료(V2 청크 사이징), 압축은 기각
 
 | | |
 |---|---|
-| **한 줄** | **M2-par 통제 재측정 완료(2026-07-01)**: 런마다 truncate로 다시 재니 원래 "device 락·분리 필수" 서사가 **DB 성장 오염**이었음이 드러남. **10k는 device 켠 채로 무손실**, device 분리는 적재 때문이 아님. |
-| **방금 끝낸 것** | **M2-par 통제 세션**(DB 리셋 + 런마다 truncate + `checkpoint_timeout=1min` + 토글 N=4) 완료. 워커 스케일 7,686→13,452(디스크 포화 ~93%), device upsert ~5% 페널티, 큐 backlog ~16k(큐 10k 드롭·큐 200k 무손실), **device 켠 채 도착 10k 무손실(10,169, 드롭 0)**. DB 성장 미통제가 3결론(N=8 과병렬·device 락 −40%·분리 필수) 부풀린 것 truncate 재측정으로 전부 반전. `docs/measurements/M2-par.md`·메모리 교정. |
-| **다음 한 걸음** | **커밋**(측정 문서 M0~M2-par + STATUS). 이후 다음 마일스톤. M4 Redis 근거 = 적재 아니라 **실시간 최신상태 조회**(1만 device 지도) + Streams 크래시 생존. 진짜 병목 대비 = **DB 성장**(retention·압축). |
-| **메모** | 측정 교훈: 2-머신 용량은 **런마다 truncate**(느린 DB 성장 confound) + **checkpoint 낮춰 단일 런 안정** + **지속 평균**(peak Stat 아님). 극적 결론 나오면 통제 빠진 변수 의심. GC 튜닝 폐기(I/O 병목). SLO: 업링크 10k·조회 1만·다운링크 ~500. |
+| **한 줄** | **지속 10k 측정 완료(2026-07-01)**: 청크 7일→**5분**으로 현재-청크 인덱스를 캐시에 가둬 **63분간 10k 평평·드롭 0**(V1의 13k→<10k 시간 하락 제거). 단, **압축 정책은 단일 HDD에서 기각** — 1h 지점에 옛 청크 읽는 I/O가 ingest를 굶겨 27분간 5.86M행 드롭. **raw 적재 + retention 12h로 확정.** |
+| **방금 끝낸 것** | **V2 90분 지속 런 분석**(Prometheus/node_exporter 시계열). ⓐ 청크 5분 = 63분 평평 10k·드롭 0·디스크읽기~0(인덱스 캐시 적중 직접 증거) ⓑ 1h 압축 켜지자 디스크읽기 0→11MB/s·util 88→95%+·flush 105→700ms·큐 200k 포화·**총 드롭 5,858,290**(회복 못 함, bgwriter와 동형) ⓒ 압축비 **40.56×**(결과물은 좋으나 과정 I/O가 치명). **결정**: 압축 제거, raw+retention. 미압축 청크 실측 942MB→265GiB/일 → retention **1일(75%) 빡세 12h(38%)로**(하드웨어 스펙), 잡 1h 스윕. 마이그레이션 `V2__telemetry_chunk_retention.sql`(압축 이름·블록 제거)·박스 DB(압축 정책 job1000 제거, retention 12h/1h) 정리. `docs/measurements/M2-sustain.md` 작성. **아직 커밋 안 함.** |
+| **다음 한 걸음 [예정]** | **커밋**(V2 파일 + `M2-sustain.md` + STATUS 한 커밋). 그 다음 **M4 Redis**: 읽기 경로 최신상태 캐시(1만 device 최신 위치 지도) + Streams 내구 버퍼(크래시 생존). docker-compose에 redis 점증(M4). |
+| **메모** | 측정 교훈: 단일 포화 HDD에선 **경쟁 I/O(bgwriter·압축)가 drain을 굶긴다** → 무손실엔 큐 흡수 + 성장 대응(청크 사이징)이 답. 압축은 결과물(40×) 좋아도 **과정 I/O가 하드웨어 블록** — 전용 디스크/SSD·티어드 스토리지 생기면 재도입. 2-머신 용량 측정은 truncate·checkpoint↓·지속평균. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
 
 ---
 
@@ -51,6 +51,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 | 2026-06-30 | **MQTT 수집 추가**(IoT 표준 전송). Redis Streams(fan-out)와 다른 계층, 공존. Kafka는 보류 유지 | [ADR 0007 §MQTT](decisions/0007-messaging-storage-redis-streams-and-governance.md) |
 | 2026-06-30 | **문서 작성 규칙 강화** — 비유·직역체 조어·장식 이모지·지어낸 서사 금지를 §7에 codify | [conventions.md §7](conventions.md) |
 | 2026-06-30 | **M2 = 앱 전체 PostgreSQL/TimescaleDB 단일 교체**(MySQL 제거). 대안(Influx·ClickHouse·QuestDB·Cassandra·순수 PG) 검토 — 관계형+시계열 한 엔진이 기준. 기대 효과·기각 근거 ADR에 정리 | **[ADR 0008](decisions/0008-telemetry-store-timescaledb.md)** |
+| 2026-07-01 | **M4 읽기경로 스펙 확정 + M4 분해**(M4a 캐시 → M4b Streams+push → 인증 별도). 신선도=**push**(폴링 대체) · 스코프=**조직**(device→org 1:N `orgId`, 관리자↔org M:N·권한강제는 인증 보류) · 오프라인=**지도 유지**(lastSeen 나이 파생, TTL 만료 청소·M:N device-org 기각) | **[M4 스펙](specs/M4-realtime-read-path.md)** |
 
 ---
 
@@ -142,12 +143,15 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 - [ ] `TAG`/`ROBOT` 등 둘째 핸들러 추가 시 **`core` diff 0줄** 확인 (양축 추상화 검증, CLAUDE.md §2.2)
 
 ## M4 — 실시간 푸시 · 최신상태 캐시 · 인증/식별 (Redis)  ⬜  읽기경로(+보조)
-> Redis 하나가 **캐시 + Streams 브로커** 두 역할 → 새 인프라 0, §3.4 안 깸 ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)).
-- [ ] `LatestStateLookup` 포트 + **Redis 캐시** (naive 최신조회 *before/after* — 읽기경로 헤드라인)
+> Redis 하나가 **캐시 + Streams 브로커** 두 역할 → 새 인프라 0, §3.4 안 깸 ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)). **읽기경로 스펙 확정 → [M4 스펙](specs/M4-realtime-read-path.md)** (신선도=push · 스코프=조직 1:N · 오프라인 유지). 세 조각으로 분해:
+### M4a — 최신상태 캐시 (읽기경로 헤드라인)
+- [ ] `LatestStateLookup` 포트 + **Redis 캐시** (naive 상관 서브쿼리 *before/after*, 디바이스 수별 p95/p99) — 조직 파티션 키(`latest:{orgId}`), 배치 워커 write-through
+### M4b — Streams fan-out + WebSocket push
 - [ ] **Redis Streams 도입** — 인메모리 큐(M2) → Stream `storage` CG + `monitoring` CG. `XACK`/`XPENDING`/`XCLAIM`, 컨슈머 멱등성
-- [ ] WebSocket 실시간 푸시 (지도 폴링 → 푸시) ← **두 번째 소비자**(`monitoring` CG)
+- [ ] WebSocket 실시간 push (지도 폴링 → push) ← **두 번째 소비자**(`monitoring` CG). 조직 스코프 구독, 오프라인 lastSeen 파생
+### 인증(별도 — 측정 주도 아님)
 - [ ] 인증/식별 (`app.auth`/`app.user`, 공통 Principal, Device≠User — [보류 결정](ROADMAP.md))
-- [ ] 디바이스 그루핑/스코핑
+- [ ] 디바이스 그루핑 권한 강제 (관리자↔조직 M:N, `GET /api/devices` 스코프 필터) ← 조직 데이터모델(`orgId`)은 M4a에서
 
 ## M5 — 도달/이탈 판정 엔진 (geofence)  ⬜  보조
 - [ ] `core.engine` 판정(미션·타입 모름) + `GeofenceStateStore`
