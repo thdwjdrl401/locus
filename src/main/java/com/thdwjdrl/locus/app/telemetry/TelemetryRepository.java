@@ -38,13 +38,19 @@ public interface TelemetryRepository extends JpaRepository<Telemetry, TelemetryI
             nativeQuery = true)
     List<Telemetry> findLatestPerDevice();
 
-    /** 한 조직의 디바이스별 최신(스코프 조회 · 캐시 fallback). device.org_id로 필터 후 DISTINCT ON. */
+    /**
+     * 한 조직의 디바이스별 최신(스코프 조회 · 캐시 fallback). device.org_id로 device를 좁힌 뒤 device당 PK 인덱스 1회(LATERAL)로
+     * 최신 행을 집는다 = O(디바이스). DISTINCT ON+JOIN(O(전체행))이 전체 테이블을 훑어 급락한 것을 대체(측정: M4a.md). 단 HDD에선 흩어진
+     * 최신 행을 모으는 random read가 병목이라 캐시(RAM 응집)만큼 빠르진 않다.
+     */
     @Query(
             value =
-                    "SELECT DISTINCT ON (t.device_id) t.* FROM telemetry t "
-                            + "JOIN device d ON d.device_id = t.device_id "
-                            + "WHERE d.org_id = :orgId "
-                            + "ORDER BY t.device_id, t.recorded_at DESC",
+                    "SELECT l.* FROM device d "
+                            + "CROSS JOIN LATERAL ("
+                            + "  SELECT * FROM telemetry t WHERE t.device_id = d.device_id "
+                            + "  ORDER BY t.recorded_at DESC LIMIT 1"
+                            + ") l "
+                            + "WHERE d.org_id = :orgId",
             nativeQuery = true)
     List<Telemetry> findLatestByOrg(@Param("orgId") String orgId);
 }

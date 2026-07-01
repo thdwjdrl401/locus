@@ -13,7 +13,7 @@
 | **한 줄** | **M4a 캐시 코드 완성(2026-07-02), after 측정 남음.** before: naive 8.7s@1M(O(N²) 결함) → `DISTINCT ON`(813ms) → 근데 O(전체행)(1M 0.81s→5M 6.4s→10M 24분, RAM 초과 급락). **캐시(O(디바이스))가 스케일 해법.** 조직 파티션(`latest:{orgId}`) 확정 — 전체=super-admin 스코프(스펙 #2대로, 글로벌로 틀자던 것 물림). |
 | **방금 끝낸 것** | M4a.md 초안·원본·스크린샷 커밋(`d641d43`). **Redis 캐시 코드**(로컬 test green): Redis 의존성 · `Device.orgId`+마이그레이션 V3 · `LatestStateLookup` 포트 · `RedisLatestStateLookup`(조직별 HASH, 미스 시 DB fallback) · `locus.read.latest-source` **db/cache 토글** · 쿼리서비스 스코프 파라미터(org=전체/조직) · docker-compose redis(영속화 off, PII) · 시더에 device+org(`-v orgs`) · k6 ORG 파라미터. |
 | **다음 한 걸음 [진행 중]** | **박스 after 측정**: git pull+재빌드(`down -v`, redis 포함) → 시드(`-v orgs=10`) → **통제 비교**: 스코프 고정(org-0), 서버 `LATEST_SOURCE=db`(per-org DISTINCT ON) vs `cache`(HGETALL) k6(VUS=1·20). 웜=lazy populate(ramp 버림). → M4a.md after 채워 완성. 그다음 **write-through**(배치워커=프로덕션 신선도)+부작용 측정 · **네이티브 쿼리 통합테스트**. |
-| **메모** | 측정 시 캐시 경로는 DB 트랜잭션 안 잡음(커넥션 점유 회피). findAll(전체)은 orgs SET 필요 → cold면 per-org 먼저 웜. 통제 비교는 스코프 고정(org 하나) db↔cache가 confound 없음. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
+| **메모** | **per-org 쿼리 발견(2026-07-02)**: DISTINCT ON+JOIN은 전체 10M 훑어 >60s(k6 타임아웃) → **LATERAL(device당 PK 1회, O(디바이스))로 교체**. 근데 LATERAL도 **HDD에선 흩어진 최신 행 random read가 병목**(org-0 1k device 6.8s cold, `shared read=691`). → 서사 정교화: 캐시 승리 이유 = 최신을 **RAM에 응집해 HDD random read 제거**(쓰기경로 HDD 병목 테마 재현). 캐시 경로는 DB tx 미점유. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
 
 ---
 
