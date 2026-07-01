@@ -6,14 +6,14 @@
 
 ---
 
-## 현재 포커스 — M2 TimescaleDB 전환
+## 현재 포커스 — M2-par 통제 재측정 완료
 
 | | |
 |---|---|
-| **한 줄** | **방향 전환(2026-06-30)**: 도메인 포지셔닝(IoT 시계열 파이프라인)에 맞춰 로드맵 재정렬. M1(1,437)이 디스크 병목 측정 근거 → **다음 = M2 TimescaleDB 전환**(순차 저장 = PostgreSQL + 시계열 + 병목 해결). |
-| **방금 끝낸 것** | **M2-par 측정 완료** — 워커 병렬화(group commit, append-only ~14k) + 큐 사이징(200k)으로 **단일 HDD에서 도착 10k rows/s 무손실(dropped/s=0)** 달성. 둘째 병목=device 행 락(device-on은 drain<10k, 큐로 못 고침 → **device 분리=M4 필수** 측정 확정). 데드락(`TreeMap` 락 순서) 수정. 폐기 시도(bgwriter 역효과·checkpoint_timeout 함정) 정직 기록. `docs/measurements/M2-par.md`. |
-| **다음 한 걸음** | **M2-par 커밋·태그**(`m2-par`) → 다음 마일스톤. SLO 10k 무손실은 **M4(device 상태 Redis 분리 + Streams 내구 버퍼)** 에서 실경로화. |
-| **메모** | GC 튜닝 폐기(I/O가 병목이라 비병목, 측정 근거). SLO: 업링크 10k·조회 1만·다운링크 ~500. 측정 정체성 유지(키워드 아닌 측정 정당화). |
+| **한 줄** | **M2-par 통제 재측정 완료(2026-07-01)**: 런마다 truncate로 다시 재니 원래 "device 락·분리 필수" 서사가 **DB 성장 오염**이었음이 드러남. **10k는 device 켠 채로 무손실**, device 분리는 적재 때문이 아님. |
+| **방금 끝낸 것** | **M2-par 통제 세션**(DB 리셋 + 런마다 truncate + `checkpoint_timeout=1min` + 토글 N=4) 완료. 워커 스케일 7,686→13,452(디스크 포화 ~93%), device upsert ~5% 페널티, 큐 backlog ~16k(큐 10k 드롭·큐 200k 무손실), **device 켠 채 도착 10k 무손실(10,169, 드롭 0)**. DB 성장 미통제가 3결론(N=8 과병렬·device 락 −40%·분리 필수) 부풀린 것 truncate 재측정으로 전부 반전. `docs/measurements/M2-par.md`·메모리 교정. |
+| **다음 한 걸음** | **커밋**(측정 문서 M0~M2-par + STATUS). 이후 다음 마일스톤. M4 Redis 근거 = 적재 아니라 **실시간 최신상태 조회**(1만 device 지도) + Streams 크래시 생존. 진짜 병목 대비 = **DB 성장**(retention·압축). |
+| **메모** | 측정 교훈: 2-머신 용량은 **런마다 truncate**(느린 DB 성장 confound) + **checkpoint 낮춰 단일 런 안정** + **지속 평균**(peak Stat 아님). 극적 결론 나오면 통제 빠진 변수 의심. GC 튜닝 폐기(I/O 병목). SLO: 업링크 10k·조회 1만·다운링크 ~500. |
 
 ---
 
