@@ -42,10 +42,10 @@ public class TelemetryController {
         ingestService.ingest(request);
     }
 
-    /** 디바이스별 최신 프레임 목록 — 관제 지도용. */
+    /** 디바이스별 최신 프레임 목록 — 관제 지도용. {@code org} 지정 시 그 조직, 없으면 전체(super-admin). */
     @GetMapping("/latest")
-    public List<TelemetryResponse> latestPerDevice() {
-        return queryService.latestPerDevice();
+    public List<TelemetryResponse> latestPerDevice(@RequestParam(required = false) String org) {
+        return queryService.latestPerDevice(org);
     }
 
     /** 한 디바이스의 최신 프레임. 텔레메트리 없으면 404. */

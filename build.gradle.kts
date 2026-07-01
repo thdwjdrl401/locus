@@ -33,10 +33,12 @@ dependencies {
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
 
     // DB: M2 TimescaleDB(PostgreSQL). Flyway로 스키마 관리 (ddl-auto=validate).
-    // M4 Redis 의존성은 해당 마일스톤에서 추가.
     runtimeOnly("org.postgresql:postgresql")
     implementation("org.flywaydb:flyway-core")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
+
+    // M4: Redis — 최신상태 캐시(읽기경로). M4b에서 같은 Redis를 Streams fan-out으로 확장(ADR 0007).
+    implementation("org.springframework.boot:spring-boot-starter-data-redis")
 
     // --- 테스트 ---
     testImplementation("org.springframework.boot:spring-boot-starter-test")

@@ -8,6 +8,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 /**
  * 텔레메트리 영속·조회.
@@ -36,4 +37,14 @@ public interface TelemetryRepository extends JpaRepository<Telemetry, TelemetryI
                             + "ORDER BY device_id, recorded_at DESC",
             nativeQuery = true)
     List<Telemetry> findLatestPerDevice();
+
+    /** 한 조직의 디바이스별 최신(스코프 조회 · 캐시 fallback). device.org_id로 필터 후 DISTINCT ON. */
+    @Query(
+            value =
+                    "SELECT DISTINCT ON (t.device_id) t.* FROM telemetry t "
+                            + "JOIN device d ON d.device_id = t.device_id "
+                            + "WHERE d.org_id = :orgId "
+                            + "ORDER BY t.device_id, t.recorded_at DESC",
+            nativeQuery = true)
+    List<Telemetry> findLatestByOrg(@Param("orgId") String orgId);
 }

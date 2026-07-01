@@ -25,6 +25,12 @@ spring:
         format_sql: true
     open-in-view: false
 
+  # M4: 최신상태 캐시. docker-compose redis 서비스와 짝(영속화 없는 파생 캐시).
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
 # 측정 인프라 (M0부터): Actuator -> Prometheus 스크레이프
 management:
   endpoints:
@@ -70,6 +76,9 @@ locus:
     device-upsert: ${INGEST_DEVICE_UPSERT:true}
     # 배치 워커 스레드 수(M2-par 병렬화). 단일 워커 처리율 한계를 넘김. DB_POOL_MAX 이하로.
     workers: ${INGEST_WORKERS:1}
+  read:
+    # 최신조회(GET /api/telemetry/latest) 백엔드: db(DISTINCT ON) | cache(Redis 최신상태). M4a before/after 토글.
+    latest-source: ${LATEST_SOURCE:db}
 
 logging:
   level:

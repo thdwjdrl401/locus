@@ -6,14 +6,14 @@
 
 ---
 
-## 현재 포커스 — M4a: naive→DISTINCT ON 스케일 곡선 완료 → Redis 캐시 착수
+## 현재 포커스 — M4a: Redis 캐시 코드 완성 → 박스 after 측정
 
 | | |
 |---|---|
-| **한 줄** | **M4a before+쿼리수정 측정 완료(2026-07-01~02)**. naive 상관 서브쿼리 = **8.7s @ 1M행**(EXPLAIN `loops=1000000`, O(N²), CPU 바운드) = 코드 결함 → **`DISTINCT ON` 수정(813ms, 10.7×)**. 근데 DISTINCT ON도 **O(전체행)**: 1M 0.81s → 5M 6.4s → **10M 24분**(RAM 초과로 플랜 전환+디스크 정렬, 2×데이터 225×지연 급락). → **캐시(O(디바이스))가 스케일 해법 + push 스냅샷 — 두 이유로 정당, 완전히 못박힘.** |
-| **방금 끝낸 것** | before 도구·fix 커밋(`cd06ecb`). **DISTINCT ON 스케일 곡선 3점**(EXPLAIN): 1M **813ms** → 5M **6,431ms** → 10M **1,438,707ms(24분, external merge 디스크 spill ~3GB)**. naive 1k도 측정(k6 VUS=1 p95 8.65s, VUS=20 47.6s). **`docs/measurements/M4a.md` 초안** 작성(naive→DISTINCT ON→캐시 3단, 함정·갭 명시). |
-| **다음 한 걸음 [진행 중]** | **Redis 캐시 착수**(after): ① docker-compose redis 점증 ② `orgId` + `LatestStateLookup` 포트 ③ `RedisLatestStateLookup`(조직별 HASH `latest:{orgId}`, 배치워커 write-through, 미스 시 DB fallback) ④ 쿼리서비스 포트 경유(토글 before/after) ⑤ after 측정(스케일 무관 평평) + write-through 부작용 → M4a.md 완성. **네이티브 쿼리 통합테스트 추가**(현재 갭). |
-| **메모** | naive O(N²)·DISTINCT ON O(전체행) 둘 다 총행수 비례(디바이스 아니라 device×이력). RAM(shared_buffers 2GB) 넘으면 플랜 전환+디스크 정렬로 급락(10M=24분). 캐시 O(디바이스)만 이력 무관. "1k에서 깨진다"는 부정확 — 트리거는 총행수. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
+| **한 줄** | **M4a 캐시 코드 완성(2026-07-02), after 측정 남음.** before: naive 8.7s@1M(O(N²) 결함) → `DISTINCT ON`(813ms) → 근데 O(전체행)(1M 0.81s→5M 6.4s→10M 24분, RAM 초과 급락). **캐시(O(디바이스))가 스케일 해법.** 조직 파티션(`latest:{orgId}`) 확정 — 전체=super-admin 스코프(스펙 #2대로, 글로벌로 틀자던 것 물림). |
+| **방금 끝낸 것** | M4a.md 초안·원본·스크린샷 커밋(`d641d43`). **Redis 캐시 코드**(로컬 test green): Redis 의존성 · `Device.orgId`+마이그레이션 V3 · `LatestStateLookup` 포트 · `RedisLatestStateLookup`(조직별 HASH, 미스 시 DB fallback) · `locus.read.latest-source` **db/cache 토글** · 쿼리서비스 스코프 파라미터(org=전체/조직) · docker-compose redis(영속화 off, PII) · 시더에 device+org(`-v orgs`) · k6 ORG 파라미터. |
+| **다음 한 걸음 [진행 중]** | **박스 after 측정**: git pull+재빌드(`down -v`, redis 포함) → 시드(`-v orgs=10`) → **통제 비교**: 스코프 고정(org-0), 서버 `LATEST_SOURCE=db`(per-org DISTINCT ON) vs `cache`(HGETALL) k6(VUS=1·20). 웜=lazy populate(ramp 버림). → M4a.md after 채워 완성. 그다음 **write-through**(배치워커=프로덕션 신선도)+부작용 측정 · **네이티브 쿼리 통합테스트**. |
+| **메모** | 측정 시 캐시 경로는 DB 트랜잭션 안 잡음(커넥션 점유 회피). findAll(전체)은 orgs SET 필요 → cold면 per-org 먼저 웜. 통제 비교는 스코프 고정(org 하나) db↔cache가 confound 없음. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
 
 ---
 

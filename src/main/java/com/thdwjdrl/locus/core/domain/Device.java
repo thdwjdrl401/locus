@@ -44,6 +44,11 @@ public class Device {
     @Column(nullable = false)
     private DeviceStatus status = DeviceStatus.UNKNOWN;
 
+    // 조직(테넌트) 소속. device→조직 = 1:N(스펙 #2). 최신상태 캐시의 파티션 키.
+    // 데이터 모델만 M4a에 도입 — 채우기(enrollment)·권한 강제는 인증(보류).
+    @Column(name = "org_id")
+    private String orgId;
+
     @Column(name = "first_seen_at")
     private Instant firstSeenAt;
 

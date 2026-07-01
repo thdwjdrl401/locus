@@ -128,11 +128,20 @@ class TelemetryControllerWebTest {
 
     @Test
     void 전체_최신목록은_200_배열() throws Exception {
-        when(queryService.latestPerDevice())
+        // org 파라미터 없음 → 컨트롤러가 latestPerDevice(null) 호출(전체=super-admin).
+        when(queryService.latestPerDevice(null))
                 .thenReturn(List.of(sample("phone-1"), sample("phone-2")));
         mockMvc.perform(get("/api/telemetry/latest"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].deviceId").value("phone-1"))
                 .andExpect(jsonPath("$[1].deviceId").value("phone-2"));
+    }
+
+    @Test
+    void 조직_스코프_최신목록은_그_조직으로_조회() throws Exception {
+        when(queryService.latestPerDevice("org-3")).thenReturn(List.of(sample("phone-9")));
+        mockMvc.perform(get("/api/telemetry/latest").param("org", "org-3"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].deviceId").value("phone-9"));
     }
 }

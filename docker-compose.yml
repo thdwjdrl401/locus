@@ -38,6 +38,24 @@ services:
       timeout: 5s
       retries: 5
 
+  # M4: 최신상태 캐시(+ M4b Streams fan-out). 같은 Redis가 두 역할(ADR 0007) — 새 인프라 하나뿐(§3.4).
+  # 영속화 끔(--save "" --appendonly no): 캐시는 DB에서 재빌드 가능한 파생 상태라
+  #   (1) 위치 PII가 RDB/AOF·백업으로 새지 않게(ADR 0007 §버퍼 내 PII, M6) (2) 측정 중 Redis 디스크 I/O 0.
+  # 박스에 시스템 Redis가 6379를 점유하면 REDIS_HOST_PORT로 분리(시스템 DB 공존 방식과 동일).
+  redis:
+    image: redis:7.4-alpine
+    container_name: locus-redis
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    cpuset: "0-5"
+    mem_limit: 512m
+    command: redis-server --save "" --appendonly no --maxmemory 256mb --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # 호스트(박스) 메트릭 노출 — 디스크 %util·쓰기 지연·평균 요청 크기 등을 9100으로.
   # 측정 시 iostat 로그 대신 Prometheus가 긁어 Grafana로 본다. (관측 사이드카 — 파이프라인 인프라 아님, §3.4 무관)
   node-exporter:
