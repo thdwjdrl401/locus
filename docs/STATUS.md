@@ -6,14 +6,14 @@
 
 ---
 
-## 현재 포커스 — 지속 10k 측정 완료(V2 청크 사이징), 압축은 기각
+## 현재 포커스 — M4a 착수: before 측정 (Redis 전 DB 최신조회 baseline)
 
 | | |
 |---|---|
-| **한 줄** | **지속 10k 측정 완료(2026-07-01)**: 청크 7일→**5분**으로 현재-청크 인덱스를 캐시에 가둬 **63분간 10k 평평·드롭 0**(V1의 13k→<10k 시간 하락 제거). 단, **압축 정책은 단일 HDD에서 기각** — 1h 지점에 옛 청크 읽는 I/O가 ingest를 굶겨 27분간 5.86M행 드롭. **raw 적재 + retention 12h로 확정.** |
-| **방금 끝낸 것** | **V2 90분 지속 런 분석**(Prometheus/node_exporter 시계열). ⓐ 청크 5분 = 63분 평평 10k·드롭 0·디스크읽기~0(인덱스 캐시 적중 직접 증거) ⓑ 1h 압축 켜지자 디스크읽기 0→11MB/s·util 88→95%+·flush 105→700ms·큐 200k 포화·**총 드롭 5,858,290**(회복 못 함, bgwriter와 동형) ⓒ 압축비 **40.56×**(결과물은 좋으나 과정 I/O가 치명). **결정**: 압축 제거, raw+retention. 미압축 청크 실측 942MB→265GiB/일 → retention **1일(75%) 빡세 12h(38%)로**(하드웨어 스펙), 잡 1h 스윕. 마이그레이션 `V2__telemetry_chunk_retention.sql`(압축 이름·블록 제거)·박스 DB(압축 정책 job1000 제거, retention 12h/1h) 정리. `docs/measurements/M2-sustain.md` 작성. **아직 커밋 안 함.** |
-| **다음 한 걸음 [예정]** | **커밋**(V2 파일 + `M2-sustain.md` + STATUS 한 커밋). 그 다음 **M4 Redis**: 읽기 경로 최신상태 캐시(1만 device 최신 위치 지도) + Streams 내구 버퍼(크래시 생존). docker-compose에 redis 점증(M4). |
-| **메모** | 측정 교훈: 단일 포화 HDD에선 **경쟁 I/O(bgwriter·압축)가 drain을 굶긴다** → 무손실엔 큐 흡수 + 성장 대응(청크 사이징)이 답. 압축은 결과물(40×) 좋아도 **과정 I/O가 하드웨어 블록** — 전용 디스크/SSD·티어드 스토리지 생기면 재도입. 2-머신 용량 측정은 truncate·checkpoint↓·지속평균. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
+| **한 줄** | **M4a(실시간 읽기경로) 착수(2026-07-01)**. 스펙 6개 확정([M4 스펙](specs/M4-realtime-read-path.md)) → 먼저 **Redis 도입 전 DB-only 최신조회 성능(before)**을 잰다: `GET /api/telemetry/latest`(상관 서브쿼리)의 디바이스 수(1k/5k/10k)별 p50/p95/p99. Redis 결정은 push(스냅샷 소스)가 이미 정당화 — 측정은 효과 기록용이지 결정용 아님(최적 DB쿼리 strawman baseline 안 함). |
+| **방금 끝낸 것** | M2 닫음(V2 `ce0820e` + M4 스펙 `41b7a1f`). **M4a 스펙 #1~#6 확정**: push · 조직 스코프(device→org 1:N) · 오프라인 지도 유지 · 캐시 렌더셋 · 조직별 단일 HASH · 측정 설계. **before 측정 도구 작성**: `load/seed-latest-dataset.sql`(N디바이스×M행 벌크 시더, 결정적) · `load/telemetry-latest-read.js`(GET /latest 읽기 k6) · `monitoring/.../locus-m4a-read.json`(읽기 대시보드 — 지연 p95/p99·HikariCP·디스크읽기). |
+| **다음 한 걸음 [진행 중]** | **박스에서 before 측정 실행**: 스케일마다 `TRUNCATE telemetry` → 시드(1k/5k/10k × 1,000행) → 읽기 k6(VUS=1 순수지연, VUS=20 동시성) → p50/p95/p99 + Grafana(디스크읽기·HikariCP·CPU) 기록(3회 중앙값·steady-state). 그다음 **Redis 도입 + 캐시**(조직별 HASH, write-through, `LatestStateLookup` 포트, `orgId`) → after 측정 + write-through 부작용 → `docs/measurements/M4a.md`. docker-compose에 redis 점증(M4). |
+| **메모** | before 측정: 디바이스당 N행(=1,000) 정확값 비민감(빈 테이블만 아니면 서브쿼리가 실제 최신을 뒤짐). 캐시 비용은 이력 깊이 무관(최신 1건). V2 교훈(유지): 단일 포화 HDD에선 경쟁 I/O가 drain 굶김, 압축 재도입은 전용 디스크/SSD 생길 때. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
 
 ---
 
