@@ -23,7 +23,7 @@
     ]
   },
   "panels": [
-    { "id": 1, "type": "row", "title": "1 · 조회 지연·처리량 (GET /api/telemetry/latest)", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "panels": [] },
+    { "id": 1, "type": "row", "title": "1 · 조회 지연·처리량", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "panels": [] },
     {
       "id": 2, "type": "timeseries", "title": "서버측 지연 p95/p99",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -59,7 +59,7 @@
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(http_server_requests_seconds_count{uri=\"/api/telemetry/latest\", status!=\"200\"}[30s]))", "legendFormat": "non-200/s" } ]
     },
-    { "id": 10, "type": "row", "title": "2 · 병목 진단 — 왜 느린가 (자원)", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 }, "panels": [] },
+    { "id": 10, "type": "row", "title": "2 · 자원", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 }, "panels": [] },
     {
       "id": 11, "type": "timeseries", "title": "CPU",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -72,7 +72,7 @@
       ]
     },
     {
-      "id": 12, "type": "timeseries", "title": "HikariCP 커넥션 (읽기 쿼리 점유·대기)",
+      "id": 12, "type": "timeseries", "title": "HikariCP 커넥션",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
       "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
@@ -82,7 +82,7 @@
         { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "hikaricp_connections_pending", "legendFormat": "pending" }
       ]
     },
-    { "id": 20, "type": "row", "title": "3 · 디스크 읽기 (node_exporter) — 서브쿼리가 캐시 못 담고 디스크 읽는지", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 }, "panels": [] },
+    { "id": 20, "type": "row", "title": "3 · 디스크 읽기", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 }, "panels": [] },
     {
       "id": 21, "type": "timeseries", "title": "디스크 %util",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
