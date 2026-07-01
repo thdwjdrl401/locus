@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Locus — 관제</title>
-    <!-- Leaflet + OpenStreetMap 타일 (API 키 불필요). 실시간 푸시는 M4 — 지금은 폴링. -->
+    <!-- Leaflet + OpenStreetMap 타일 (API 키 불필요). 실시간 = STOMP over WebSocket 푸시(M4b). -->
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -35,14 +35,11 @@
       #hud b {
         font-size: 15px;
       }
-      .stale {
-        opacity: 0.4;
-      }
     </style>
   </head>
   <body>
     <div id="hud">
-      <div>Locus 관제 — <b id="count">0</b>대</div>
+      <div>Locus 관제 — <b id="count">0</b>대 <span id="org" style="color: #888"></span></div>
       <div id="status" style="color: #666">…</div>
     </div>
     <div id="map"></div>
@@ -52,8 +49,12 @@
       integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
       crossorigin=""
     ></script>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7/bundles/stomp.umd.min.js"></script>
     <script>
-      const POLL_MS = 3000; // 폴링 주기. 실시간 푸시(WebSocket)는 M4.
+      // 조직 스코프 — URL ?org=org-3 로 지정, 기본 org-0. 접속 시 스냅샷 1회 + 이후 델타 push.
+      const ORG = new URLSearchParams(location.search).get("org") || "org-0";
+
       const map = L.map("map").setView([37.5, 127.0], 13); // 서울 근처(시뮬레이터 기본)
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
@@ -63,44 +64,55 @@
       const markers = new Map(); // deviceId -> L.marker
       const countEl = document.getElementById("count");
       const statusEl = document.getElementById("status");
+      document.getElementById("org").textContent = "(" + ORG + ")";
 
-      async function refresh() {
-        try {
-          const res = await fetch("/api/telemetry/latest", { cache: "no-store" });
-          if (!res.ok) throw new Error("HTTP " + res.status);
-          const list = await res.json();
-          const seen = new Set();
-          for (const t of list) {
-            if (!t.location || t.location.lat == null || t.location.lng == null) continue;
-            seen.add(t.deviceId);
-            const ll = [t.location.lat, t.location.lng];
-            const popup = `<b>${t.deviceId}</b><br/>${new Date(t.recordedAt).toLocaleTimeString()}`;
-            let m = markers.get(t.deviceId);
-            if (m) {
-              m.setLatLng(ll).setPopupContent(popup);
-            } else {
-              m = L.marker(ll).addTo(map).bindPopup(popup);
-              markers.set(t.deviceId, m);
-            }
-          }
-          // 응답에서 사라진 디바이스는 마커 제거
-          for (const [id, m] of markers) {
-            if (!seen.has(id)) {
-              map.removeLayer(m);
-              markers.delete(id);
-            }
-          }
-          countEl.textContent = markers.size;
-          statusEl.textContent = "갱신: " + new Date().toLocaleTimeString();
-          statusEl.style.color = "#666";
-        } catch (e) {
-          statusEl.textContent = "연결 실패: " + e.message;
-          statusEl.style.color = "#c00";
-        }
+      function status(msg, err) {
+        statusEl.textContent = msg;
+        statusEl.style.color = err ? "#c00" : "#666";
       }
 
-      refresh();
-      setInterval(refresh, POLL_MS);
+      // 한 디바이스 최신 프레임으로 마커 생성/갱신 (스냅샷·push 공용).
+      function upsert(t) {
+        if (!t.location || t.location.lat == null || t.location.lng == null) return;
+        const ll = [t.location.lat, t.location.lng];
+        const popup = `<b>${t.deviceId}</b><br/>${new Date(t.recordedAt).toLocaleTimeString()}`;
+        let m = markers.get(t.deviceId);
+        if (m) {
+          m.setLatLng(ll).setPopupContent(popup);
+        } else {
+          m = L.marker(ll).addTo(map).bindPopup(popup);
+          markers.set(t.deviceId, m);
+        }
+        countEl.textContent = markers.size;
+      }
+
+      // 1) 접속 시 현재 상태 스냅샷 (LATERAL 조회, O(디바이스)).
+      async function snapshot() {
+        const res = await fetch("/api/telemetry/latest?org=" + encodeURIComponent(ORG), {
+          cache: "no-store",
+        });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        for (const t of await res.json()) upsert(t);
+      }
+
+      // 2) 이후 갱신은 STOMP 토픽 push (폴링 없음).
+      function connect() {
+        const client = new StompJs.Client({
+          webSocketFactory: () => new SockJS("/ws"),
+          reconnectDelay: 2000,
+          onConnect: () => {
+            client.subscribe("/topic/org/" + ORG, (msg) => upsert(JSON.parse(msg.body)));
+            status("실시간 연결됨 · " + new Date().toLocaleTimeString());
+          },
+          onStompError: (f) => status("STOMP 오류: " + f.headers["message"], true),
+          onWebSocketClose: () => status("연결 끊김 — 재접속 중", true),
+        });
+        client.activate();
+      }
+
+      snapshot()
+        .then(connect)
+        .catch((e) => status("스냅샷 실패: " + e.message, true));
     </script>
   </body>
 </html>

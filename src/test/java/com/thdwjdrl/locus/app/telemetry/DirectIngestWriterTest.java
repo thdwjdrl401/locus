@@ -2,7 +2,9 @@ package com.thdwjdrl.locus.app.telemetry;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.thdwjdrl.locus.app.device.DeviceRepository;
@@ -19,6 +21,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /** 단건 직접 적재(A0): Device upsert(생성/갱신) + Telemetry persist. */
 @ExtendWith(MockitoExtension.class)
@@ -26,6 +30,7 @@ class DirectIngestWriterTest {
 
     @Mock private DeviceRepository deviceRepository;
     @Mock private EntityManager entityManager;
+    @Mock private LiveUpdatePublisher livePublisher;
 
     private final Instant now = Instant.parse("2026-06-20T09:00:00Z");
 
@@ -34,7 +39,7 @@ class DirectIngestWriterTest {
     }
 
     private DirectIngestWriter writer() {
-        return new DirectIngestWriter(deviceRepository, entityManager);
+        return new DirectIngestWriter(deviceRepository, entityManager, livePublisher);
     }
 
     @Test
@@ -64,5 +69,34 @@ class DirectIngestWriterTest {
         assertThat(existing.getStatus()).isEqualTo(DeviceStatus.ONLINE);
         verify(deviceRepository).save(existing);
         verify(entityManager).persist(any(Telemetry.class));
+    }
+
+    @Test
+    void 조직_있는_디바이스는_커밋후_실시간_push한다() {
+        Device withOrg = new Device("phone-1", DeviceType.PHONE);
+        withOrg.setOrgId("org-3");
+        when(deviceRepository.findByDeviceId("phone-1")).thenReturn(Optional.of(withOrg));
+
+        // 트랜잭션 동기화 활성화 후 submit → 커밋(afterCommit) 시뮬레이션.
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            writer().submit(telemetry());
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+
+        verify(livePublisher).publish(eq("org-3"), any(TelemetryResponse.class));
+    }
+
+    @Test
+    void 조직_없는_디바이스는_push하지_않는다() {
+        Device noOrg = new Device("phone-1", DeviceType.PHONE); // org_id null
+        when(deviceRepository.findByDeviceId("phone-1")).thenReturn(Optional.of(noOrg));
+
+        writer().submit(telemetry());
+
+        verifyNoInteractions(livePublisher);
     }
 }

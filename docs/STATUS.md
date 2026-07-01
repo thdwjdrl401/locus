@@ -6,14 +6,14 @@
 
 ---
 
-## 현재 포커스 — M4a 완료: 최신조회 쿼리 최적화 (8.7s → 35ms). 실시간은 M4b(push)
+## 현재 포커스 — M4b(A) 실시간 WebSocket push 뼈대 완성 → 박스 데모·측정
 
 | | |
 |---|---|
-| **한 줄** | **M4a 완료(2026-07-02).** 최신조회는 쿼리 문제였다: naive 상관 서브쿼리(O(N²) 8.7s)·`DISTINCT ON`(O(전체행) 24분@10M) 둘 다 전체 행을 훑는 나쁜 쿼리 → **`LATERAL`(device당 PK 인덱스 1회, O(디바이스))로 8.65s→35ms(~250×), 캐시 없이.** 병목=결과는 디바이스 수만큼인데 일이 전체 행에 비례. |
-| **방금 끝낸 것** | LATERAL 측정: k6 `GET /latest?org=org-0` VUS=1 p95 **35ms**, VUS=20 **236ms**(0% 에러). `findLatestByOrg`→LATERAL(`4c2fe03`). `M4a.md` 쿼리최적화 서사로 재작성(①naive→②DISTINCT ON→③LATERAL) + 원본(M4a-raw). 문서 "정직" 라벨 제거(ADR 0008·STATUS). |
-| **다음 한 걸음** | **M4b — 실시간 push**: Redis Streams(인메모리 큐 → storage/monitoring CG) + WebSocket(폴링→push) + 접속 시 스냅샷 소스로 캐시. 캐시 코드(`LatestStateLookup`·`RedisLatestStateLookup`)는 있으나 read엔 불필요해 `latest-source=db`로 꺼둠 — push에서 켠다. 부수: **네이티브 쿼리(②③) 통합테스트**(현재 WebMvc 목킹만), 응답 경량 렌더셋(425KB↓). |
-| **메모** | 캐시 재평가: DB가 LATERAL로 35ms에 하니 **읽기 지연 때문엔 캐시 불필요**(이전 "DISTINCT ON 24분→캐시"는 나쁜 쿼리와 비교한 오류). 캐시 명분은 push 스냅샷 + 콜드/오프로드로 좁혀짐. LATERAL도 콜드 6.8s(HDD random read)/웜 35ms. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
+| **한 줄** | **M4b 착수 — A(WebSocket push 뼈대) 완성(2026-07-02, 로컬 test green).** 지도 폴링 → **스냅샷(REST LATERAL) + STOMP 조직 토픽 델타 push**. Streams(B)는 소스만 바뀌게 **소스무관 포트**(`LiveUpdatePublisher`)로 설계 — A→B에 WebSocket 층 재사용. Streams는 포트폴리오 목표라 A 직후 B(walking skeleton→강화). |
+| **방금 끝낸 것** | WebSocket 의존성 · STOMP 설정(`WebSocketConfig`, `/topic/org/{orgId}`) · `LiveUpdatePublisher` 포트 + `WebSocketLiveUpdatePublisher` · `DirectIngestWriter` 커밋후 org-스코프 push(afterCommit, org 없으면 스킵) + 테스트 2 · 지도 `index.html` STOMP 재작성(스냅샷+구독). M4a 완료(쿼리 `LATERAL` 8.65s→35ms, `M4a.md`). |
+| **다음 한 걸음** | **박스 실시간 데모**: device를 org와 함께 시드(시뮬레이터 ID 매칭) → 시뮬레이터(direct) → 지도 마커 실시간 이동 확인 → **push 지연·부하 측정(vs 폴링)**. 그다음 **B(Redis Streams)**: 인메모리 큐 → Stream `storage`/`monitoring` CG, XACK/XPENDING/XCLAIM·멱등·크래시 복구. 부수: queue-mode push, 네이티브 쿼리(②③) 통합테스트. |
+| **메모** | push는 **org 있는 디바이스만** 발사(라우팅 대상). 시뮬레이터 신규 디바이스는 org 없음 → 데모 전 device 시드 필요. A→B = push 소스만 교체(배치워커 인프로세스 → Stream 컨슈머), WebSocket·포트 그대로. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
 
 ---
 

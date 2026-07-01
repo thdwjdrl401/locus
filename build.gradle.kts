@@ -40,6 +40,9 @@ dependencies {
     // M4: Redis — 최신상태 캐시(읽기경로). M4b에서 같은 Redis를 Streams fan-out으로 확장(ADR 0007).
     implementation("org.springframework.boot:spring-boot-starter-data-redis")
 
+    // M4b: WebSocket(STOMP) — 실시간 push. 소스는 인프로세스 이벤트(A) → Redis Streams 컨슈머(B)로 승격.
+    implementation("org.springframework.boot:spring-boot-starter-websocket")
+
     // --- 테스트 ---
     testImplementation("org.springframework.boot:spring-boot-starter-test")
 

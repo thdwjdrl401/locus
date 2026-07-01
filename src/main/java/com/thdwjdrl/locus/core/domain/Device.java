@@ -86,6 +86,14 @@ public class Device {
         this.status = status;
     }
 
+    public String getOrgId() {
+        return orgId;
+    }
+
+    public void setOrgId(String orgId) {
+        this.orgId = orgId;
+    }
+
     public Instant getFirstSeenAt() {
         return firstSeenAt;
     }
