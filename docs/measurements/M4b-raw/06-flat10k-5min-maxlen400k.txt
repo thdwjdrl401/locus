@@ -1,0 +1,29 @@
+=== run 06 — MAXLEN 400,000, 워커 4, flat 10K, HOLD 300s ===
+INGEST_MODE=stream INGEST_WORKERS=4 scripts/run-app.sh --locus.ingest.stream-maxlen=400000
+k6 run ... -e DEVICES=12000 -e RATES=10000 -e HOLD=300s load/telemetry-capacity.js
+
+--- k6 요약 ---
+  WARN Insufficient VUs, reached 2000 active VUs (초반)
+  http_req_duration  ✓ p(95)=362.45ms
+  http_req_failed    ✓ rate=0.00%
+  checks_succeeded...: 100.00% 2780515 out of 2780515  (✓ status is 202)
+  http_req_duration..: avg=77.63ms med=19.05ms max=1.19s p(90)=244.08ms p(95)=362.45ms
+  http_reqs..........: 2780515 8688.593191/s
+  dropped_iterations.: 319485 (998.33/s)
+  vus_max............: 2000
+
+Grafana: 202 accepted 정상상태 flat 10K. intake avg ~10ms. 디스크 %util ~60%(여유).
+
+--- 드레인 후 ---
+XLEN = 400006
+XINFO GROUPS:
+  monitoring: pending 200, entries-read 2583519, lag 196996  (best-effort, 부하 후 회복)
+  storage(4): pending 0, entries-read 2780515, lag 0
+DB = 2780515
+
+--- 검증 ---
+accepted 2780515 = DB 2780515 → 유실 0 (true zero-loss).
+warm-up lag 스파이크(~200K)가 버퍼 400K 밑이라 미소비분이 안 잘림 (트림 조건 lag>MAXLEN 미충족).
+400K × 511B ≈ 204MB < 256mb → OOM 없음(HTTP 실패 0%).
+→ "버퍼는 peak consumer lag(warm-up 포함)보다 커야" 실증: MAXLEN 200K=0.037% → 400K=0%.
+결론: stream 모드는 정상상태 10K SLO를 무손실 충족, 디스크 60% 여유.

@@ -1,0 +1,29 @@
+=== run 05b — MAXLEN 200,000, 워커 4, flat 10K, HOLD 300s ===
+INGEST_MODE=stream INGEST_WORKERS=4 scripts/run-app.sh --locus.ingest.stream-maxlen=200000
+k6 run ... -e DEVICES=12000 -e RATES=10000 -e HOLD=300s load/telemetry-capacity.js
+
+--- k6 요약 ---
+  WARN Insufficient VUs, reached 2000 active VUs (초반)
+  http_req_duration  ✓ p(95)=338.41ms
+  http_req_failed    ✓ rate=0.00%
+  checks_succeeded...: 100.00% 2794840 out of 2794840  (✓ status is 202)
+  http_req_duration..: avg=57.9ms med=14.4ms max=1.49s p(90)=91.75ms p(95)=338.41ms
+  http_reqs..........: 2794840 8733.715364/s
+  dropped_iterations.: 305160 (953.6/s)
+  vus_max............: 2000
+
+Grafana: 202 accepted가 ~18:29:15부터 끝까지 flat 10K/s 유지. intake avg 초반 ~110ms → 이후 ~10ms 평평.
+디스크 %util 정상상태 ~65%(포화 아님).
+
+--- 드레인 후 ---
+XLEN = 200005
+XINFO GROUPS:
+  monitoring: pending 0, entries-read 2794840, lag 0
+  storage(4): pending 0, entries-read 2794840, lag 0
+DB = 2793798
+
+--- 검증 ---
+accepted 2794840 − DB 2793798 = 1042 유실 (0.0373%).
+정상상태 delivered = flat 10K (짧은 05a의 6K는 warm-up이었음이 확인됨).
+유실 1042 = warm-up 때 storage 드레인이 잠깐 느려 lag이 순간 200K(버퍼)를 넘겨 트림됨(트림 조건 lag>MAXLEN).
+정상상태(warm 이후)는 lag 0 = 무손실. 버퍼를 키우면 0으로 → run 06(MAXLEN 400K).

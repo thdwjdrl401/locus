@@ -1,0 +1,28 @@
+=== run 03 — MAXLEN 200,000, 워커 4, ramp 2K→12K ===
+INGEST_MODE=stream INGEST_WORKERS=4 scripts/run-app.sh --locus.ingest.stream-maxlen=200000
+k6 ... -e RATES=2000,4000,6000,8000,10000,12000 -e HOLD=30s (동일)
+
+--- k6 요약 ---
+  http_req_duration  ✓ p(95)=53.06ms
+  http_req_failed    ✓ rate=0.00%
+  checks_succeeded...: 100.00% 1677821 out of 1677821  (✓ status is 202)
+  http_reqs..........: 1677821 6711.103686/s
+  dropped_iterations.: 2178
+  vus_max............: 1213
+
+--- 부하 종료 직후 watch ---
+XLEN = 200003 (만땅, 하지만 무손실)
+XINFO GROUPS:
+  monitoring: entries-read 1677821, lag 0
+  storage(4): pending 0, entries-read 1677821, lag 0
+DB = 1677821
+
+--- 드레인 완료 후 최종 ---
+  storage(4): pending 0, entries-read 1677821, lag 0
+DB = 1677821
+
+--- 검증 ---
+accepted 1677821 = DB 1677821 → 유실 0.
+insert(램프 평균) ≈ 1677821/250s ≈ 6.7K/s = 도착 평균과 일치(storage가 램프 전체 따라잡음).
+디스크 %util 최고 ~95%(포화 근접). 버퍼 200K가 12K 피크(30s)를 흡수, 읽기 커서가 트림 경계보다 앞서 미소비분 안 잘림.
+주: 이 6.7K는 램프 평균(저rate 구간 포함)이지 천장이 아니다. 지속 천장은 flat 런에서(run 05b/06 = 10K 지속).

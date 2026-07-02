@@ -1,0 +1,28 @@
+=== run 02 — MAXLEN 200,000, 워커 2, ramp 2K→12K ===
+INGEST_MODE=stream INGEST_WORKERS=2 scripts/run-app.sh --locus.ingest.stream-maxlen=200000
+k6 ... -e RATES=2000,4000,6000,8000,10000,12000 -e HOLD=30s (동일)
+
+--- k6 요약 ---
+  http_req_duration  ✓ p(95)=29.9ms
+  http_req_failed    ✓ rate=0.00%
+  checks_succeeded...: 100.00% 1678309 out of 1678309  (✓ status is 202)
+  http_reqs..........: 1678309 6713.014954/s
+  dropped_iterations.: 1691
+  vus_max............: 1019
+
+--- 부하 종료 직후 watch ---
+XLEN = 200005 (만땅)
+XINFO GROUPS:
+  monitoring: pending 200, entries-read 1570833, lag 107476
+  storage(2): pending 0, entries-read 1678309, lag 0
+DB = 1448413 (드레인 중)
+
+--- 드레인 완료 후 최종 ---
+  monitoring: pending 0, entries-read 1678309, lag 0
+  storage(2): pending 0, entries-read 1678309, lag 0
+DB = 1448413
+
+--- 검증 ---
+accepted 1678309 − DB 1448413 = 229896 유실 (13.70%).
+insert ≈ 1448413/250s ≈ 5.8K/s. 디스크 %util 최고 ~90%.
+워커 1→2: 유실 34.5%→13.7%, insert ×1.32(sublinear), 디스크 37%→90% → 병목이 디스크로 이동 중.

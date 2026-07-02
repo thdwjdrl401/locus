@@ -42,8 +42,15 @@ public class IngestProperties {
     /** Redis Stream 키(stream 모드, ADR 0007 fan-out 버퍼). */
     private String streamKey = "telemetry.stream";
 
-    /** Stream 최대 길이(근사 절단, MAXLEN). 초과분은 오래된 것부터 버림 — 단기 버퍼, 보존은 TimescaleDB. */
-    private long streamMaxlen = 1_000_000;
+    /**
+     * Stream 최대 길이(근사 절단, MAXLEN). 초과분은 오래된 것부터 버림 — 단기 버퍼, 보존은 TimescaleDB.
+     *
+     * <p>사이징 규칙(M4b 측정): (a) Redis {@code maxmemory} 안에 들 것 — 엔트리 ~0.5KB라 {@code MAXLEN×0.5KB}가
+     * maxmemory를 넘으면 트리밍이 못 걸려 OOM(기본 1,000,000×0.5KB≈512MB > 256mb에서 실제 OOM 발생). (b) worst-case
+     * storage 컨슈머 랙보다 클 것 — 트림은 oldest부터라 {@code MAXLEN < 미소비 랙}이면 미소비분이 잘려 유실(내구 경로). 박스(maxmemory
+     * 256mb·업링크 10k SLO)에서 400,000이 무손실 최소값. maxmemory를 바꾸면 역산해 조정.
+     */
+    private long streamMaxlen = 400_000;
 
     public String getMode() {
         return mode;

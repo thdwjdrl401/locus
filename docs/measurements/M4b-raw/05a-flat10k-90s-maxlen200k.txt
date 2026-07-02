@@ -1,0 +1,26 @@
+=== run 05a — MAXLEN 200,000, 워커 4, flat 10K, HOLD 90s ===
+INGEST_MODE=stream INGEST_WORKERS=4 scripts/run-app.sh --locus.ingest.stream-maxlen=200000
+k6 run ... -e DEVICES=12000 -e RATES=10000 -e HOLD=90s load/telemetry-capacity.js
+
+--- k6 요약 ---
+  WARN Insufficient VUs, reached 2000 active VUs
+  http_req_duration  ✓ p(95)=610.44ms
+  http_req_failed    ✓ rate=0.00%
+  checks_succeeded...: 100.00% 669494 out of 669494  (✓ status is 202)
+  http_req_duration..: avg=269.9ms med=230.04ms max=1.71s p(90)=545.14ms p(95)=610.44ms
+  http_reqs..........: 669494 6085.902276/s
+  dropped_iterations.: 330505 (3004.39/s)
+  vus_max............: 2000
+
+--- 드레인 후 ---
+XLEN = 200000
+XINFO GROUPS:
+  monitoring: pending 0, entries-read 669494, lag 0
+  storage(4): pending 0, entries-read 669494, lag 0
+DB = 669494
+
+--- 검증 ---
+accepted 669494 = DB 669494 → 유실 0.
+그러나 목표 10K인데 delivered avg = 669494/110s ≈ 6.1K, dropped 330505.
+110s(램프 뺀 유효 ~80s)로는 warm-up 트랜지언트(JIT·PG캐시·배치 프라이밍 ~60s)를 못 벗어남 → 6K는 warm-up 측정.
+정상상태 확인엔 더 긴 런 필요 → run 05b(5분).

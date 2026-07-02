@@ -1,0 +1,31 @@
+=== run 07 — 재시작 무손실 (MAXLEN 400,000, 워커 4, flat 6K, 부하 중 kill -9) ===
+INGEST_MODE=stream INGEST_WORKERS=4 scripts/run-app.sh --locus.ingest.stream-maxlen=400000
+k6 run ... -e DEVICES=12000 -e RATES=6000 -e HOLD=120s load/telemetry-capacity.js
+# 부하 ~40s에 박스에서: pkill -9 -f 'locus-.*\.jar' → 즉시 재기동(동일 커맨드). 다운타임 ~11s.
+
+--- k6 요약 ---
+  WARN[0040] Request Failed error="... EOF"                      (kill 시점, in-flight 요청)
+  WARN[0051] Request Failed error="... connection refused"       (다운타임)
+  http_req_duration  ✓ p(95)=815.95ms
+  http_req_failed    ✗ rate=10.96%
+  checks_total.......: 592975
+  checks_succeeded...: 89.03% 527928 out of 592975
+  checks_failed......: 10.96% 65047 out of 592975
+  ✗ status is 202  ↳ 89% — ✓ 527928 / ✗ 65047
+  http_reqs..........: 592975 4235.33741/s
+  dropped_iterations.: 187025
+  vus_max............: 2000
+
+CPU 패널: 18:49:30에 0%로 하강(앱 죽음) 후 복구 = kill/restart 확인.
+
+--- 드레인 후 최종 ---
+XINFO GROUPS:
+  monitoring: pending 0, entries-read 527928, lag 0
+  storage(4): pending 0, entries-read 527928, lag 0
+DB = 527928
+
+--- 검증 ---
+DB 527928 = k6 202 성공수 527928 → 무손실.
+DB ≤ accepted (초과 없음) → 무중복(재기동 시 storage가 자기 pending을 offset "0"부터 재처리, ON CONFLICT가 흡수).
+실패 65047 = 다운타임(EOF·연결거부) → 애초에 accepted 아님 → DB 기대치 아님(정합).
+→ 청크4 크래시 복구(at-least-once + 멱등 재처리)를 실 Redis·실 kill로 검증.

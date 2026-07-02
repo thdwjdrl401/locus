@@ -1,0 +1,69 @@
+=== run 00 — MAXLEN 1,000,000 (기본값), 워커 1, ramp 2K→12K ===
+INGEST_MODE=stream scripts/run-app.sh   (stream-maxlen 미지정 = 1,000,000)
+k6 run -e BASE_URL=http://192.168.219.124:8093 -e DEVICES=12000 -e HOLD=30s \
+       -e RATES=2000,4000,6000,8000,10000,12000 load/telemetry-capacity.js
+
+--- k6 요약 ---
+  █ THRESHOLDS
+    http_req_duration  ✓ 'p(95)<1000' p(95)=869.46ms
+    http_req_failed    ✗ 'rate<0.01'  rate=35.10%
+
+  █ TOTAL RESULTS
+    checks_total.......: 894163
+    checks_succeeded...: 64.89% 580285 out of 894163
+    checks_failed......: 35.10% 313878 out of 894163
+    ✗ status is 202
+      ↳  64% — ✓ 580285 / ✗ 313878
+
+    http_req_duration..: avg=248.97ms med=2.84ms max=2.08s p(90)=747.73ms p(95)=869.46ms
+      {expected_response:true}: avg=2.71ms med=1.13ms max=957.98ms p(90)=6.03ms p(95)=9.42ms
+    http_req_failed....: 35.10% 313878 out of 894163
+    http_reqs..........: 894163 3576.859429/s
+    dropped_iterations.: 785836 3143.526299/s
+    iterations.........: 894163 3576.859429/s
+    vus_max............: 2000
+
+--- watch (부하 종료 직후) ---
+XLEN telemetry.stream = 580285
+XINFO GROUPS:
+  monitoring: consumers 1, pending 200, last-delivered-id 1782980325545-3, entries-read 458218, lag 122067
+  storage:    consumers 1, pending 0,   last-delivered-id 1782980342994-27, entries-read 580285, lag 0
+DB count = 580285
+
+--- Redis 진단 (XLEN 아직 580285, 메모리 여전히 꽉 참) ---
+INFO memory:
+  used_memory_human:256.09M
+  used_memory_peak_human:256.47M
+  maxmemory_human:256.00M
+INFO stats:
+  rejected_connections:0
+  total_error_replies:313890
+MEMORY USAGE telemetry.stream = 296426393
+XINFO STREAM telemetry.stream (발췌):
+  length 580285
+  radix-tree-keys 64477 / radix-tree-nodes 128261
+  last-generated-id 1782980342994-27
+  entries-added 580285
+  recorded-first-entry-id 1782980204475-0
+  groups 2
+  first-entry data:
+    {"deviceId":"phone-6","deviceType":"PHONE","recordedAt":"2026-07-02T08:16:44.396Z",
+     "receivedAt":"2026-07-02T08:16:44.459362367Z","location":{"lat":37.5,"lng":127.0,
+     "accuracy":5.0,"altitude":null,"speed":1.0,"heading":90.0},"metrics":{"appState":"FOREGROUND",
+     "activity":"WALKING","permission":"WHILE_IN_USE","battery":{"level":80,"charging":false},
+     "sharingEnabled":true,"network":{"online":true,"type":"CELLULAR"}}}
+
+--- 앱 로그 (500의 근본 원인) ---
+ERROR ... o.a.c.c.C.[.[.[/].[dispatcherServlet] : Servlet.service() ... threw exception
+  [Request processing failed: org.springframework.data.redis.RedisSystemException:
+   Error in execution] with root cause
+io.lettuce.core.RedisCommandExecutionException:
+    OOM command not allowed when used memory > 'maxmemory'.
+    at io.lettuce.core.internal.ExceptionFactory.createExecutionException(...)
+    ...
+
+--- 검증 ---
+엔트리당 메모리 ≈ 296426393 / 580285 = 510.8 B
+MAXLEN 1,000,000 × 511B ≈ 511 MB > 256 MB → 트리밍 도달 불가 → append-only 증가 → OOM.
+total_error_replies 313890 ≈ k6 실패 313878 → 실패 = XADD OOM(HTTP 500).
+XACK는 PEL만 비움(storage lag 0인데도 XLEN 580285 유지) = 스트림은 append-only 로그.

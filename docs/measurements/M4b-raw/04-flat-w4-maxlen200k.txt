@@ -1,0 +1,26 @@
+=== run 04 — MAXLEN 200,000, 워커 4, flat 6/7/8/9K (HOLD 45s) ===
+INGEST_MODE=stream INGEST_WORKERS=4 scripts/run-app.sh --locus.ingest.stream-maxlen=200000
+k6 run ... -e DEVICES=12000 -e HOLD=45s -e RATES=6000,7000,8000,9000 load/telemetry-capacity.js
+
+--- k6 요약 ---
+  WARN Insufficient VUs, reached 2000 active VUs
+  http_req_duration  ✓ p(95)=501.41ms
+  http_req_failed    ✓ rate=0.00%
+  checks_succeeded...: 100.00% 1566855 out of 1566855  (✓ status is 202)
+  http_req_duration..: avg=52.28ms med=6.75ms max=962.57ms p(90)=42.56ms p(95)=501.41ms
+  http_reqs..........: 1566855 6812.201243/s
+  dropped_iterations.: 83145 (361.49/s)
+  vus_max............: 2000
+
+--- 드레인 후 ---
+XLEN = 200007
+XINFO GROUPS:
+  monitoring: pending 0, entries-read 1566855, lag 0
+  storage(4): pending 0, entries-read 1566855, lag 0
+DB = 1566855
+
+--- 검증 ---
+accepted 1566855 = DB 1566855 → 파이프라인 유실 0.
+그러나 dropped_iterations 83145 + p95 501ms → 8~9K에서 intake가 못 받음(admission-bound).
+202 delivered가 ~8K에서 평평. 디스크 %util은 최상위 rate에서 오히려 하락(intake가 상단을 막아 디스크가 굶음)
+ → 맨 위 병목은 디스크가 아니라 intake 경합(코어 0–5 공유). 초과 수요는 유실이 아니라 문 앞 백프레셔.

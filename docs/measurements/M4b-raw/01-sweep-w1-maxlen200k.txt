@@ -1,0 +1,38 @@
+=== run 01 — MAXLEN 200,000, 워커 1, ramp 2K→12K ===
+INGEST_MODE=stream INGEST_WORKERS=1 scripts/run-app.sh --locus.ingest.stream-maxlen=200000
+k6 run -e BASE_URL=http://192.168.219.124:8093 -e DEVICES=12000 -e HOLD=30s \
+       -e RATES=2000,4000,6000,8000,10000,12000 load/telemetry-capacity.js
+
+--- k6 요약 ---
+  █ THRESHOLDS
+    http_req_duration  ✓ p(95)=16.14ms
+    http_req_failed    ✓ rate=0.00%
+
+  █ TOTAL RESULTS
+    checks_total.......: 1679140
+    checks_succeeded...: 100.00% 1679140 out of 1679140
+    ✓ status is 202
+    http_req_duration..: avg=4.27ms med=1.89ms max=210.93ms p(90)=11.03ms p(95)=16.14ms
+    http_req_failed....: 0.00% 0 out of 1679140
+    http_reqs..........: 1679140 6716.41686/s
+    dropped_iterations.: 859
+    vus_max............: 551
+
+--- 부하 종료 직후 watch ---
+XLEN = 200008 (상한 만땅)
+XINFO GROUPS:
+  monitoring: pending 200, entries-read 1574538, lag 104602
+  storage(1): pending 500, entries-read 1607600, lag 71540
+DB = 1029097  (드레인 중)
+
+--- 드레인 완료 후 최종 ---
+XINFO GROUPS:
+  monitoring: pending 0, entries-read 1679140, lag 0
+  storage(1): pending 0, entries-read 1679140, lag 0
+DB = 1100137
+
+--- 검증 ---
+accepted 1679140 − DB 1100137 = 579003 유실 (34.48%).
+entries-read(1679140)=논리 커서 위치(트림-스킵 포함), 실제 insert=DB 1100137.
+insert ≈ 1100137/250s ≈ 4.4K/s. 디스크 %util 최고 ~37%(미포화) → 병목=단일 배치 직렬화, 디스크 아님.
+storage 드레인(~4.4K) < 램프 8~12K 구간 도착 → 버퍼 200K 포화 → oldest(미소비) 트림 = 유실.

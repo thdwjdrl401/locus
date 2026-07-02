@@ -1,19 +1,19 @@
 # 작업 현황 (STATUS) — 진행 현황의 기준 문서
 
 > **이 문서 = 상시 갱신하는 진행 기록** (뭘 끝냈고 / 지금 뭐 하고 / 다음에 뭐 할지 / 왜 그렇게 정했는지의 기록).
-> 역할 분담 — 이 문서는 **상태**만. *왜·어디에* = [ROADMAP](ROADMAP.md), *수치·해석* = [measurements/](measurements/), *결정 이유(ADR)* = [decisions/](decisions/), *트리 매핑* = [STRUCTURE](STRUCTURE.md).
+> 역할 분담 — 이 문서는 **상태**만. *왜·어디에* = [ROADMAP](ROADMAP.md), *수치·해석* = [measurements/](measurements/), *마일스톤 횡단 병목 서사* = [PERFORMANCE](PERFORMANCE.md), *결정 이유(ADR)* = [decisions/](decisions/), *트리 매핑* = [STRUCTURE](STRUCTURE.md).
 > 범례: ✅ 완료 · 🔄 진행 중 · ⬜ 예정 · ⏸ 보류(다른 마일스톤) · 🚧 막힘(외부의존). 작업·결정 끝낼 때마다 여기 갱신(CLAUDE.md §7).
 
 ---
 
-## 현재 포커스 — M4b(B) Streams 골격 + 통합테스트 커버리지 → CI 검증 · 박스
+## 현재 포커스 — M4b(B) Streams 박스 측정 완료 → 다음: M4b(A) push 측정 or M-MQTT/M5
 
 | | |
 |---|---|
-| **한 줄** | **B(Redis Streams) 청크 1~3 + 근본 테스트 커버리지 완성(2026-07-02).** `mode=stream`: 수집→Stream XADD→`storage`(적재)·`monitoring`(push) 독립 컨슈머 그룹. push가 적재 핫패스에서 분리(풀 고갈 근본 해결). **반복된 검증 실패(stream DI·LATERAL) 근본 대응 = Redis Testcontainers 통합테스트 추가** — Streams가 이제 CI에서 실행 검증됨(전엔 커버리지 0, 박스가 첫 실행이었음). |
-| **방금 끝낸 것** | B 골격(`StreamIngestWriter`·`StreamStorageConsumer`·`StreamMonitoringConsumer`·`DeviceOrgResolver`). **근본 fix**: `StreamIngestIntegrationTest`(실 Redis GenericContainer + PG) — ⓐ stream 모드 컨텍스트 기동(DI 스모크, 오늘 겪은 기동 실패 자동 감지) ⓑ 수집→Stream→storage 적재 ⓒ org 디바이스 monitoring push(카운터). `TelemetryBatchDao` 무조건 빈(stream DI 수정), `findLatestPerDevice`·통합테스트 LATERAL 대응. |
-| **다음 한 걸음** | **청크4 크래시 복구(코드 완료)**: storage 컨슈머가 재시작 시 자기 pending(offset `"0"`) 먼저 재처리 = at-least-once(멱등 재처리). monitoring은 pending 회수 생략(크래시 시 몇 건 미push돼도 클라이언트 재접속 스냅샷이 치유). **검증=박스 측정**: `mode=stream` 실 기동(storage 적재+monitoring push+`XINFO GROUPS`) + **재시작 무손실·무중복**(복구 검증, 부하 중 앱 kill→재시작→DB count 일치) + 적재 처리량 재측정(vs 인메모리 큐). 로컬 Testcontainers 불가 → 기능은 CI, 재시작/스케일은 박스. |
-| **메모** | **검증 규율(반복 실패 교훈, 2026-07-02)**: DB쿼리·배선(@Conditional)·인프라 변경은 **로컬 `test`(단위/웹) green ≠ 완료** — CI `check`(실 DB 통합) + 박스(실 Redis)까지가 게이트. CI green 볼 때까지 완료 선언 안 하고, 검증 수준 정직 명시. 컨슈머 그룹 독립 커서(storage=0부터·monitoring=$부터), 적재후 XACK(멱등 재처리), push는 org 디바이스만. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
+| **한 줄** | **B(Redis Streams) 적재 fan-out 박스 측정 완료(2026-07-02).** `mode=stream`: 수집→XADD→`storage`(적재)·`monitoring`(push) 독립 컨슈머 그룹. **goal 1(재시작 무손실·무중복)·goal 2(지속 10k 무손실) 둘 다 실 Redis·실 kill로 검증.** 상세·원본: [measurements/M4b.md](measurements/M4b.md) · [M4b-raw/](measurements/M4b-raw/). |
+| **방금 끝낸 것** | **박스 측정 6런 + 재시작 1런.** ⓐ **MAXLEN 1M이 maxmemory 256mb에서 OOM**(append-only 로그, XACK≠삭제) → 200K/400K로 bound. ⓑ **워커 스윕 1/2/4**: 유실 34.5→13.7→0%, 병목이 storage 직렬화→디스크(%util 37→90→95). ⓒ **지속 10k 무손실**(워커4·MAXLEN400K, 디스크 60% 여유) — 짧은 런은 warm-up만 측정(교훈). ⓓ **버퍼>peak lag이어야 무손실**(200K=0.037%→400K=0%). ⓔ **재시작**: DB=202성공수, pending→0 = 무손실·무중복(청크4 at-least-once 실증). 코드 반영: `application.yml` `stream-maxlen` 노출 + 기본값 1M→400K, `IngestProperties` 사이징 규칙 문서화. |
+| **다음 한 걸음** | 택1 — **M4b(A) push 측정**(WebSocket 접속 시 스냅샷 소스 + monitoring push 지연/유실 허용치, best-effort 검증) · 또는 **M-MQTT**(수집 프로토콜) · **M5**(지오펜스, Redis Stream CG 재활용). 로드맵 우선순위 확인 후 착수. |
+| **메모** | **검증 규율(2026-07-02)**: DB쿼리·배선·인프라 변경은 로컬 test green ≠ 완료 — CI(실 DB) + 박스(실 Redis)까지가 게이트. **측정 위생 추가 교훈**: 짧은 부하 런은 warm-up 트랜지언트를 정상상태로 오인한다(90s 런 6k → 5분 런 정상상태 10k). SLO: 업링크 10k·조회 1만·다운링크 ~500. 폭주 정책=blind MAXLEN(내구 경로는 사이징으로 무손실); XTRIM MINID는 별도 결정. |
 
 ---
 
@@ -51,6 +51,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 | 2026-06-30 | **MQTT 수집 추가**(IoT 표준 전송). Redis Streams(fan-out)와 다른 계층, 공존. Kafka는 보류 유지 | [ADR 0007 §MQTT](decisions/0007-messaging-storage-redis-streams-and-governance.md) |
 | 2026-06-30 | **문서 작성 규칙 강화** — 비유·직역체 조어·장식 이모지·지어낸 서사 금지를 §7에 codify | [conventions.md §7](conventions.md) |
 | 2026-06-30 | **M2 = 앱 전체 PostgreSQL/TimescaleDB 단일 교체**(MySQL 제거). 대안(Influx·ClickHouse·QuestDB·Cassandra·순수 PG) 검토 — 관계형+시계열 한 엔진이 기준. 기대 효과·기각 근거 ADR에 정리 | **[ADR 0008](decisions/0008-telemetry-store-timescaledb.md)** |
+| 2026-07-02 | **M4b(B) stream 적재 측정 확정**: `stream-maxlen` 기본 1M→**400K**(256mb 무손실 최소값). 스트림=append-only 로그(XACK≠삭제)라 MAXLEN을 maxmemory에서 역산·worst-case 랙보다 크게. 지속 10k 무손실(워커4), 재시작 at-least-once 실증. 폭주=blind MAXLEN(내구 무손실) | **[M4b.md](measurements/M4b.md)**, `application.yml`, `IngestProperties` |
 | 2026-07-01 | **M4 읽기경로 스펙 확정 + M4 분해**(M4a 캐시 → M4b Streams+push → 인증 별도). 신선도=**push**(폴링 대체) · 스코프=**조직**(device→org 1:N `orgId`, 관리자↔org M:N·권한강제는 인증 보류) · 오프라인=**지도 유지**(lastSeen 나이 파생, TTL 만료 청소·M:N device-org 기각) | **[M4 스펙](specs/M4-realtime-read-path.md)** |
 
 ---

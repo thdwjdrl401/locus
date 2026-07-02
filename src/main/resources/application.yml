@@ -74,8 +74,14 @@ locus:
     max-delay-ms: ${INGEST_MAX_DELAY_MS:200}
     # false면 Device upsert 생략 = A2-x(핫패스 UPDATE 교란변수 격리)
     device-upsert: ${INGEST_DEVICE_UPSERT:true}
-    # 배치 워커 스레드 수(M2-par 병렬화). 단일 워커 처리율 한계를 넘김. DB_POOL_MAX 이하로.
+    # 배치 워커 스레드 수(M2-par 병렬화 / stream storage 컨슈머 수). 단일 워커 처리율 한계를 넘김. DB_POOL_MAX 이하로.
     workers: ${INGEST_WORKERS:1}
+    # stream 모드 fan-out 버퍼(ADR 0007). 상세: measurements/M4b.md.
+    stream-key: ${INGEST_STREAM_KEY:telemetry.stream}
+    # 스트림 상한(XADD MAXLEN 근사 절단). 단기 버퍼 — 보존은 TimescaleDB.
+    # 사이징: (a) Redis maxmemory 안에 들 것(엔트리 ~0.5KB, 400K≈200MB<256mb) (b) worst-case storage 랙보다 클 것
+    #   (트림은 oldest부터라 MAXLEN<미소비 랙이면 유실). 400K = 박스(256mb·10k SLO) 무손실 최소값(M4b). maxmemory 바꾸면 역산 조정.
+    stream-maxlen: ${INGEST_STREAM_MAXLEN:400000}
   read:
     # 최신조회(GET /api/telemetry/latest) 백엔드: db(DISTINCT ON) | cache(Redis 최신상태). M4a before/after 토글.
     latest-source: ${LATEST_SOURCE:db}
