@@ -6,14 +6,14 @@
 
 ---
 
-## 현재 포커스 — M4b(B) Streams 박스 측정 완료 → 다음: M4b(A) push 측정 or M-MQTT/M5
+## 현재 포커스 — M-MQTT 수집 프로토콜 착수 (Paho 직접 + `MqttSubscriber` 이음새)
 
 | | |
 |---|---|
-| **한 줄** | **B(Redis Streams) 적재 fan-out 박스 측정 완료(2026-07-02).** `mode=stream`: 수집→XADD→`storage`(적재)·`monitoring`(push) 독립 컨슈머 그룹. **goal 1(재시작 무손실·무중복)·goal 2(지속 10k 무손실) 둘 다 실 Redis·실 kill로 검증.** 상세·원본: [measurements/M4b.md](measurements/M4b.md) · [M4b-raw/](measurements/M4b-raw/). |
-| **방금 끝낸 것** | **박스 측정 6런 + 재시작 1런.** ⓐ **MAXLEN 1M이 maxmemory 256mb에서 OOM**(append-only 로그, XACK≠삭제) → 200K/400K로 bound. ⓑ **워커 스윕 1/2/4**: 유실 34.5→13.7→0%, 병목이 storage 직렬화→디스크(%util 37→90→95). ⓒ **지속 10k 무손실**(워커4·MAXLEN400K, 디스크 60% 여유) — 짧은 런은 warm-up만 측정(교훈). ⓓ **버퍼>peak lag이어야 무손실**(200K=0.037%→400K=0%). ⓔ **재시작**: DB=202성공수, pending→0 = 무손실·무중복(청크4 at-least-once 실증). 코드 반영: `application.yml` `stream-maxlen` 노출 + 기본값 1M→400K, `IngestProperties` 사이징 규칙 문서화. |
-| **다음 한 걸음** | 택1 — **M4b(A) push 측정**(WebSocket 접속 시 스냅샷 소스 + monitoring push 지연/유실 허용치, best-effort 검증) · 또는 **M-MQTT**(수집 프로토콜) · **M5**(지오펜스, Redis Stream CG 재활용). 로드맵 우선순위 확인 후 착수. |
-| **메모** | **검증 규율(2026-07-02)**: DB쿼리·배선·인프라 변경은 로컬 test green ≠ 완료 — CI(실 DB) + 박스(실 Redis)까지가 게이트. **측정 위생 추가 교훈**: 짧은 부하 런은 warm-up 트랜지언트를 정상상태로 오인한다(90s 런 6k → 5분 런 정상상태 10k). SLO: 업링크 10k·조회 1만·다운링크 ~500. 폭주 정책=blind MAXLEN(내구 경로는 사이징으로 무손실); XTRIM MINID는 별도 결정. |
+| **한 줄** | **M-MQTT 착수(2026-07-02)**: IoT 표준 수집 전송(디바이스 uplink) 추가. 어댑터가 브로커 구독→`TelemetryRequest` 역직렬화→검증→**기존 `TelemetryIngestService.ingest()` 합류**(적재 경로 공유, core 변경 0, ADR 0007). 브로커=**Mosquitto**(새 인프라 1개, §3.4). HTTP 수집과 다른 계층·공존. |
+| **직전 완료 (M4b B)** | Redis Streams 적재 fan-out 박스 측정: **지속 10k 무손실**(워커4·MAXLEN400K)·**재시작 at-least-once**. 상세 [measurements/M4b.md](measurements/M4b.md)·[raw](measurements/M4b-raw/). 커밋 `f481eb2`·CI green. |
+| **다음 한 걸음** | **첫 슬라이스 완료·검증**(2026-07-02): Mosquitto compose + Paho 의존성 + `MqttSubscriber` 이음새(ADR 0004, Paho 구현) + `MqttTelemetryHandler`(HTTP `@Valid` 검증 재사용→`TelemetryIngestService` 합류). **`MqttIngestIntegrationTest`(실 Mosquitto+TimescaleDB) 3개 green**: enabled 기동+구독·publish→DB 적재·검증실패 드롭. 로컬 Testcontainers=colima 소켓 env로 실행됨. 기본 `enabled=false`(비침습). **다음 = 측정**: MQTT vs HTTP 수집 처리량·QoS 0/1 비용·영속 연결 스케일(부하툴 `emqtt-bench` 등, 박스). |
+| **메모 / 보류** | **M4b-A 시작점(데모 발견, 2026-07-02)**: 10k 실시간 관제의 벽은 파이프라인 아니라 **관제 화면** — 스냅샷 `GET /latest` 10k=**4.87MB/0.5s**(서버 OK) but 브라우저 **마커 1만 DOM 렌더**에서 행. 레버: 경량 렌더셋(→~300KB) + canvas/클러스터/뷰포트 컬링. // **검증 규율**: 새 서브시스템은 통합테스트 동반, CI green까지 완료 선언 금지. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
 
 ---
 
@@ -52,6 +52,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 | 2026-06-30 | **문서 작성 규칙 강화** — 비유·직역체 조어·장식 이모지·지어낸 서사 금지를 §7에 codify | [conventions.md §7](conventions.md) |
 | 2026-06-30 | **M2 = 앱 전체 PostgreSQL/TimescaleDB 단일 교체**(MySQL 제거). 대안(Influx·ClickHouse·QuestDB·Cassandra·순수 PG) 검토 — 관계형+시계열 한 엔진이 기준. 기대 효과·기각 근거 ADR에 정리 | **[ADR 0008](decisions/0008-telemetry-store-timescaledb.md)** |
 | 2026-07-02 | **M4b(B) stream 적재 측정 확정**: `stream-maxlen` 기본 1M→**400K**(256mb 무손실 최소값). 스트림=append-only 로그(XACK≠삭제)라 MAXLEN을 maxmemory에서 역산·worst-case 랙보다 크게. 지속 10k 무손실(워커4), 재시작 at-least-once 실증. 폭주=blind MAXLEN(내구 무손실) | **[M4b.md](measurements/M4b.md)**, `application.yml`, `IngestProperties` |
+| 2026-07-02 | **M-MQTT 클라이언트 = Eclipse Paho v3 직접 + `MqttSubscriber` 이음새(ADR 0004)**. 단순 구독→적재라 Spring Integration은 과추상(라우팅 파이프라인 계획 없음). 고처리량에서 리액티브·MQTT5·backpressure 필요 시 **HiveMQ 구현체 추가**로 전환(재작성 아님, 측정 게이트). 불안정 네트워크(재접속·QoS·last-will) 직접 통제 | `app.telemetry`(`MqttSubscriber`/`PahoMqttSubscriber`), [ADR 0007 §MQTT](decisions/0007-messaging-storage-redis-streams-and-governance.md) |
 | 2026-07-01 | **M4 읽기경로 스펙 확정 + M4 분해**(M4a 캐시 → M4b Streams+push → 인증 별도). 신선도=**push**(폴링 대체) · 스코프=**조직**(device→org 1:N `orgId`, 관리자↔org M:N·권한강제는 인증 보류) · 오프라인=**지도 유지**(lastSeen 나이 파생, TTL 만료 청소·M:N device-org 기각) | **[M4 스펙](specs/M4-realtime-read-path.md)** |
 
 ---

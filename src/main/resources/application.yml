@@ -85,6 +85,14 @@ locus:
   read:
     # 최신조회(GET /api/telemetry/latest) 백엔드: db(DISTINCT ON) | cache(Redis 최신상태). M4a before/after 토글.
     latest-source: ${LATEST_SOURCE:db}
+  # M-MQTT: MQTT 수집 경로(디바이스 uplink, ADR 0007). enabled=true일 때만 브로커 구독 —
+  # 기본 꺼둠(HTTP-only 실행·테스트는 브로커 불필요). 상세: measurements(M-MQTT).
+  mqtt:
+    enabled: ${MQTT_ENABLED:false}
+    url: ${MQTT_URL:tcp://localhost:1883}
+    topic: ${MQTT_TOPIC:telemetry}
+    qos: ${MQTT_QOS:1} # 1=at-least-once(중복은 ON CONFLICT dedup) · 0=fire-forget. 측정 변수.
+    client-id: ${MQTT_CLIENT_ID:locus-ingest}
 
 logging:
   level:

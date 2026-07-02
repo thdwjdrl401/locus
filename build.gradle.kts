@@ -43,6 +43,10 @@ dependencies {
     // M4b: WebSocket(STOMP) — 실시간 push. 소스는 인프로세스 이벤트(A) → Redis Streams 컨슈머(B)로 승격.
     implementation("org.springframework.boot:spring-boot-starter-websocket")
 
+    // M-MQTT: MQTT 수집 경로(디바이스 uplink, ADR 0007). Eclipse Paho v3 직접 —
+    // MqttSubscriber 이음새(ADR 0004)로 감싸 고처리량 시 HiveMQ 전환 대비(재작성 아닌 구현체 추가).
+    implementation("org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5")
+
     // --- 테스트 ---
     testImplementation("org.springframework.boot:spring-boot-starter-test")
 

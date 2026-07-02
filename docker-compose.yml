@@ -4,6 +4,7 @@
 # 점증 원칙: 한 마일스톤에 파이프라인 인프라 둘 이상 동시에 올리지 않는다.
 #   M2: timescaledb (MySQL → TimescaleDB 전환, ADR 0008)
 #   M4: redis  ← 해당 마일스톤에서 추가
+#   M-MQTT: mosquitto (MQTT 수집 브로커, ADR 0007 — Redis Streams와 다른 계층)
 #
 # 기동: docker compose up -d
 # 버전 고정(재현성): 측정이 비교 가능하려면 떠다니는 태그를 쓰지 않는다.
@@ -52,6 +53,23 @@ services:
     command: redis-server --save "" --appendonly no --maxmemory 256mb --maxmemory-policy noeviction
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # M-MQTT: MQTT 수집 브로커(디바이스 uplink). Redis Streams(내부 fan-out)와 다른 계층, 공존(ADR 0007).
+  # 측정 LAN: 익명 허용(M0 HTTP 엔드포인트와 같은 정책, 인증은 M4). 영속화 끔(측정 중 디스크 I/O 0).
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: locus-mosquitto
+    ports:
+      - "${MQTT_HOST_PORT:-1883}:1883"
+    volumes:
+      - ./docker/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    cpuset: "0-5"
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -t '$$SYS/#' -C 1 -W 3 -h localhost || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
