@@ -24,9 +24,10 @@
 - `perf:` 커밋 본문엔 **헤드라인 수치 + repo 내 측정문서 경로**를 적는다.
 
 ## 3. 마일스톤 태그
-- 마일스톤 완료 후 그 커밋에 태그를 단다. = **온프렘에서 측정한 코드 상태의 고정점.**
+- 마일스톤 완료 후 그 커밋에 태그를 단다. = **온프렘에서 측정한 코드 상태의 고정점.** 실제 예(`git tag -n`, 원문 그대로 — §7 용어 규칙은 이 태그들 뒤에 생겼고 태그는 히스토리라 고치지 않는다):
   ```
-  git tag -a m2 -m "M2: 인메모리 큐 비동기 + JDBC 벌크 적재 (처리량 8.2x)"
+  m0       M0: 모델·수집·조회·시뮬레이터·측정 — knee≈33 req/s, HDD fsync 바운드 확증
+  m2-par   M2-par: 워커 병렬화 + 적재 무손실 용량 — 단일 HDD 도착 10k rows/s 무손실(append-only), ...
   ```
 - 태그 주석엔 마일스톤 요약만. (외부 링크 안 넣음 — 아래 4 참조)
 
@@ -36,22 +37,22 @@
 - **링크는 단방향**: 블로그 → repo. **repo 안엔 블로그 링크를 넣지 않는다**(링크 로트·미완성 placeholder 방지).
 - 같은 사실의 세 깊이: `git log`(스캔) → 측정문서(정밀) → 블로그(서사). 원천은 항상 repo.
 
-## 5. 작성 예시 — M2 (단건 insert → 벌크)
+## 5. 작성 예시 — M1 (단건 insert → 배치, 실측)
 
 **커밋:**
 ```
-perf(telemetry): 컨슈머 단건 save를 JDBC 벌크로 전환
+perf(telemetry): 요청당 단건 저장을 인메모리 큐 + 배치 적재로 전환
 
-5,000 디바이스 유입에서 단건 insert가 적재 병목(원인=fsync, 큐 적체 발산).
-인메모리 큐 배치 워커 + JdbcTemplate.batchUpdate(500) + rewriteBatchedStatements로 전환.
+M0 baseline 33 req/s의 병목은 커밋마다 걸리는 fsync(요청당 1.2회).
+인메모리 큐 + 배치 워커(JdbcTemplate.batchUpdate)로 N건이 fsync 1회를 공유, 내구성 유지.
 
-적재 처리량 1,200→9,800 rows/s (8.2x), 배치 p95 410→41ms, 랙 수렴.
+fsync/req 1.2→0.059, 최대 처리량 33→1,437 req/s (~44×).
 
-Milestone: M2
-Measurements: docs/measurements/M2.md
+Milestone: M1
+Measurements: docs/measurements/M1.md
 ```
 
-**측정문서**(`docs/measurements/M2.md`)에는 환경·Before표·변경내용·After표·해석·효과없던시도까지. 양식은 [measurements/README.md](measurements/README.md).
+**측정문서**(`docs/measurements/M1.md`)에는 환경·Before표·변경내용·After표·해석·효과없던시도까지. 양식은 [measurements/README.md](measurements/README.md).
 
 ## 6. 코드 스타일
 - **Lombok 안 씀.** DTO·VO·command는 **Java 21 record**(불변·간결). JPA 엔티티는 평이한 클래스 + 명시적 getter.
@@ -74,4 +75,4 @@ Measurements: docs/measurements/M2.md
 - **지어낸 서사(극적 플롯)를 쓰지 않는다.** "처음엔 X였는데 알고 보니 Y" 식 반전·날조된 긴장·교훈으로 포장하지 않고, 한 일·측정·결과를 시간순으로 담담하게 쓴다.
 
 ## 8. main green 보증
-- CI(`.github/workflows/ci.yml`): push/PR마다 `spotlessCheck` + `test`(ArchUnit 포함) + gitleaks(비밀 스캔).
+- CI(`.github/workflows/ci.yml`): push/PR마다 `./gradlew check` = `spotlessCheck` + `test`(단위/웹·ArchUnit) + `integrationTest`(Testcontainers 실 TimescaleDB·Redis·Mosquitto) + gitleaks(비밀 스캔).

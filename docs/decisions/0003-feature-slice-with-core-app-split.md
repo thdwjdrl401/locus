@@ -25,6 +25,7 @@
 - 이유: 도메인 엔티티를 그대로 JPA 엔티티로 쓰면 매퍼 보일러플레이트가 사라진다. 계획서 M0의 엔티티 정의와도 맞는다.
 - 트레이드오프: "완전한 infra-free"는 아니지만, 금지 대상을 *프레임워크·메시징·캐시 클라이언트*로 한정하는 게 이 규모에 실용적이다. `CoreIsolationTest`가 이 선을 코드로 못박는다.
 - 같은 실용 노선에서 **Hibernate 매핑 애너테이션(`@JdbcTypeCode(SqlTypes.JSON)` 등)도 core에 허용**한다(`metrics`/`params`/`metadata`의 Map↔JSON을 매퍼 없이). `org.hibernate.*`는 `CoreIsolationTest` 금지 목록에 없다.
+- jakarta는 표준이라 구현을 바꿔도 core가 안 바뀌지만 `org.hibernate.*`는 Hibernate 전용이다. JPA 프로바이더를 바꿀 일이 없어 허용한다. 그래서 core는 완전 infra-free가 아니라 "프레임워크 런타임에 안 묶임(매핑 애너테이션 예외)"이 정확하다. `Location`이 record가 아니라 클래스인 것도 이 타협 때문이다(JPA 무인자 생성자).
 - 영속 임베더블(`Location`)은 record가 아니라 **클래스**로 둔다(JPA 무인자 생성자 제약). VO를 record로 두는 컨벤션(§6)은 전송 DTO에 적용한다.
 
 ## 영향

@@ -10,7 +10,7 @@
 ## 구성
 - `mode=stream`: 수집 `POST /api/telemetry` → 검증 → `XADD telemetry.stream`(즉시 202). 두 컨슈머 그룹이 독립 커서로 각자 전량 소비 — `storage`(배치 적재, 적재 후 `XACK`, `ON CONFLICT (device_id, recorded_at) DO NOTHING`으로 멱등) · `monitoring`(WebSocket push, best-effort).
 - `XADD ... MAXLEN ~N`(근사 절단)로 스트림 길이를 bound. 보존·리플레이는 TimescaleDB.
-- 손잡이: `INGEST_WORKERS`(storage 워커 수), `--locus.ingest.stream-maxlen`(스트림 상한).
+- 제어 변수: `INGEST_WORKERS`(storage 워커 수), `--locus.ingest.stream-maxlen`(스트림 상한).
 
 ---
 
@@ -45,7 +45,7 @@ io.lettuce.core.RedisCommandExecutionException:
 | 2 | 1,448,413 | 229,896 | 13.7% | ~5.8K (포화) | 90% | 디스크 근접 |
 | 4 | 1,677,821 | **0** | **0%** | ~6.7K (램프 평균) | ~95% | 디스크 |
 
-(accepted ≈ 1.68M 동일. insert는 DB÷250s. 워커 1·2는 유실 상태라 이 값이 적재 천장이지만, 워커 4는 램프를 무손실로 따라잡아 이 값이 도착 평균일 뿐 천장이 아니다 — 지속 천장은 flat 10K 지속 런에서 확인.)
+(accepted ≈ 1.68M 동일. insert는 DB÷250s. 워커 1·2는 유실 상태라 이 값이 적재 최대 처리량이지만, 워커 4는 램프를 무손실로 따라잡아 이 값이 도착 평균일 뿐 최대 처리량이 아니다 — 지속 최대 처리량은 flat 10K 지속 런에서 확인.)
 
 - 워커는 효과 있지만 **sublinear**(×2 워커 → insert ×1.32). 1워커의 디스크 저활용(37%)은 단일 배치 직렬화 탓 — 병렬화가 디스크를 채운다.
 - 4워커에서 **디스크 ~95%로 포화 근접**, 램프 전체를 무손실 흡수. **병목이 애플리케이션(storage 직렬화)에서 디스크로 이동.** 단일 5400rpm HDD의 체감 수확 감소(M2-par와 동일).
@@ -56,7 +56,7 @@ io.lettuce.core.RedisCommandExecutionException:
 
 `MAXLEN 200,000`·워커 4·**flat 10K**:
 
-- **90s 런**: delivered 6K에서 천장, `dropped_iterations 330,505`, intake p95 610ms. "10K 못 버팀"으로 보인다.
+- **90s 런**: delivered가 6K에 그침, `dropped_iterations 330,505`, intake p95 610ms. "10K 못 버팀"으로 보인다.
 - **5분 런**: 정상상태에서 **delivered flat 10K 유지**(202 패널), intake avg ~10ms, **디스크 65%**(포화 아님). 90s 런은 warm-up 트랜지언트(JIT·PostgreSQL 캐시·배치 파이프라인 프라이밍, ~60s)를 못 벗어나고 끝난 것이었다.
 
 **교훈: 짧은 부하테스트는 warm-up을 정상상태로 오인한다.** 5분 런이 진짜 정상상태를 드러냈다 — stream 모드는 **정상상태 10K/s를 디스크 여유로 지속**한다.
@@ -109,7 +109,7 @@ io.lettuce.core.RedisCommandExecutionException:
   - 완전 무손실을 원하면 `XTRIM MINID`(모든 내구 그룹이 소비한 ID 아래만 절단) — 대신 컨슈머 정체 시 메모리 무한.
   - 내구 경로(`storage`)는 유실 없게 사이징, 실시간 경로(`monitoring`)는 버려도 됨(스냅샷 치유) — 2-그룹 분리가 이 갈래를 이미 구현.
 - **vs 인메모리 큐(M2-par)**: stream은 XADD/XREADGROUP/XACK 왕복 오버헤드가 있다. 대신 **내구 버퍼 + fan-out(push를 적재 핫패스에서 분리) + 크래시 복구**를 얻는다. 정당한 트레이드오프 — push가 적재를 막던 초기 데모(A)의 커넥션 풀 고갈이 근본 해소됐다. (stream의 최대 처리량은 SLO 10K 달성에서 멈춰 더 밀지 않음.)
-- **warm-up 측정 오진을 정직히 기록**: 90s 런의 "10K 못 버팀"은 정상상태가 아니라 트랜지언트였다. 지속 런이 바로잡았다.
+- **warm-up 구간을 잘못 해석한 기록**: 90s 런의 "10K 못 버팀"은 정상상태가 아니라 트랜지언트였다. 지속 런으로 바로잡았다.
 
 ## 남은 것 / 한계
 - **기본 MAXLEN**: 이 박스(maxmemory 256mb, 10K SLO)에선 400K가 무손실 최소값. `application.yml` 기본값을 400,000으로, `INGEST_STREAM_MAXLEN`으로 override. maxmemory를 바꾸면 MAXLEN도 역산해 조정.

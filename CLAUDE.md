@@ -20,7 +20,7 @@
 ### 2.1 core는 infra-free (ADR 0002·0003)
 - `com.thdwjdrl.locus.core`는 **Spring / Kafka / Redis 클라이언트 / Web(servlet)** 에 의존하지 못한다.
 - 이건 `src/test/.../architecture/CoreIsolationTest.java`(ArchUnit)가 빌드 단에서 강제한다. **이 테스트를 우회·약화하지 말 것.**
-- 예외: **JPA/Validation 표준 애너테이션(jakarta.persistence, jakarta.validation)은 허용**(매퍼 보일러플레이트 회피, ADR 0003 메모). 금지 대상은 프레임워크·메시징·캐시뿐.
+- 예외: **영속 매핑 애너테이션은 허용** — jakarta.persistence·jakarta.validation(표준) + Hibernate 매핑(`@JdbcTypeCode` 등 Map↔JSON). 매퍼 보일러플레이트를 없애려는 것(ADR 0003 메모). 금지 대상은 **프레임워크 런타임**(Spring·Kafka·Redis 클라이언트·Web/servlet)이지 매핑 애너테이션이 아니다.
 - core가 비어서 ArchUnit이 "검사할 클래스 없음"으로 실패하는 동안만 `allowEmptyShould(true)`를 둔다. **M0에서 core에 도메인 클래스가 생기면 규칙이 실효를 갖는다.**
 
 ### 2.2 양축 추상화 (계획서 §3·§4)

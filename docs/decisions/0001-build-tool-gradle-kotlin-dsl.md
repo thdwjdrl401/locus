@@ -13,7 +13,7 @@ Java는 toolchain으로 **21 고정** — 빌드를 어떤 JVM에서 돌리든 �
 
 ## 기각된 대안
 - **Groovy DSL**: 레퍼런스는 많지만 타입 안정성·IDE 자동완성이 약하다.
-- **Maven**: 안정적이나 XML이 장황하고 진입장벽이 낮은 만큼 차별점이 없다.
+- **Maven**: 안정적이나 XML이 장황하고 빌드 로직 표현력이 떨어진다.
 
 ## 영향
 - `build.gradle.kts`, `settings.gradle.kts`, `gradle/wrapper/*`, `gradlew`.
