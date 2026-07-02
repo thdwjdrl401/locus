@@ -97,17 +97,11 @@ public class StreamStorageConsumer implements SmartLifecycle {
     }
 
     private void runLoop(String consumer) {
+        recoverPending(consumer); // 재시작 시 미ACK pending 먼저 재처리(at-least-once)
         while (running) {
             try {
                 List<MapRecord<String, Object, Object>> records =
-                        redis.opsForStream()
-                                .read(
-                                        Consumer.from(GROUP, consumer),
-                                        StreamReadOptions.empty()
-                                                .count(props.getBatchSize())
-                                                .block(Duration.ofMillis(props.getMaxDelayMs())),
-                                        StreamOffset.create(
-                                                props.getStreamKey(), ReadOffset.lastConsumed()));
+                        readGroup(consumer, ReadOffset.lastConsumed(), true);
                 if (records == null || records.isEmpty()) {
                     continue; // BLOCK 타임아웃 — 다시 대기
                 }
@@ -117,6 +111,44 @@ public class StreamStorageConsumer implements SmartLifecycle {
                 sleep(200); // 폭주 방지
             }
         }
+    }
+
+    /**
+     * 재시작 시 이 컨슈머의 미ACK pending(PEL)을 먼저 비운다 — 크래시로 XACK 전에 죽은 배치 재처리(at-least-once). offset {@code
+     * "0"} = 이 컨슈머에게 이미 배달됐으나 ACK 안 된 것. 적재는 {@code ON CONFLICT}라 멱등 → 중복 재처리해도 안전.
+     */
+    private void recoverPending(String consumer) {
+        long recovered = 0;
+        while (running) {
+            List<MapRecord<String, Object, Object>> pending;
+            try {
+                pending = readGroup(consumer, ReadOffset.from("0"), false);
+            } catch (RuntimeException e) {
+                log.warn("{} pending 회수 실패: {}", consumer, e.toString());
+                return;
+            }
+            if (pending == null || pending.isEmpty()) {
+                break;
+            }
+            flush(pending);
+            recovered += pending.size();
+        }
+        if (recovered > 0) {
+            log.info("{} 재시작 pending {}건 재처리", consumer, recovered);
+        }
+    }
+
+    private List<MapRecord<String, Object, Object>> readGroup(
+            String consumer, ReadOffset offset, boolean block) {
+        StreamReadOptions opts = StreamReadOptions.empty().count(props.getBatchSize());
+        if (block) {
+            opts = opts.block(Duration.ofMillis(props.getMaxDelayMs()));
+        }
+        return redis.opsForStream()
+                .read(
+                        Consumer.from(GROUP, consumer),
+                        opts,
+                        StreamOffset.create(props.getStreamKey(), offset));
     }
 
     private void flush(List<MapRecord<String, Object, Object>> records) {

@@ -12,7 +12,7 @@
 |---|---|
 | **한 줄** | **B(Redis Streams) 청크 1~3 + 근본 테스트 커버리지 완성(2026-07-02).** `mode=stream`: 수집→Stream XADD→`storage`(적재)·`monitoring`(push) 독립 컨슈머 그룹. push가 적재 핫패스에서 분리(풀 고갈 근본 해결). **반복된 검증 실패(stream DI·LATERAL) 근본 대응 = Redis Testcontainers 통합테스트 추가** — Streams가 이제 CI에서 실행 검증됨(전엔 커버리지 0, 박스가 첫 실행이었음). |
 | **방금 끝낸 것** | B 골격(`StreamIngestWriter`·`StreamStorageConsumer`·`StreamMonitoringConsumer`·`DeviceOrgResolver`). **근본 fix**: `StreamIngestIntegrationTest`(실 Redis GenericContainer + PG) — ⓐ stream 모드 컨텍스트 기동(DI 스모크, 오늘 겪은 기동 실패 자동 감지) ⓑ 수집→Stream→storage 적재 ⓒ org 디바이스 monitoring push(카운터). `TelemetryBatchDao` 무조건 빈(stream DI 수정), `findLatestPerDevice`·통합테스트 LATERAL 대응. |
-| **다음 한 걸음** | **CI green 확인**(로컬 Testcontainers는 이 환경서 깨짐=docker-java init → CI가 통합 게이트). green이면 **박스 `mode=stream` 실 기동**(storage 적재+monitoring push+`XINFO GROUPS`) → **청크 4**: `XPENDING`/`XAUTOCLAIM` 크래시 복구 + 재시작 무손실·처리량 재측정(vs 인메모리 큐). |
+| **다음 한 걸음** | **청크4 크래시 복구(코드 완료)**: storage 컨슈머가 재시작 시 자기 pending(offset `"0"`) 먼저 재처리 = at-least-once(멱등 재처리). monitoring은 pending 회수 생략(크래시 시 몇 건 미push돼도 클라이언트 재접속 스냅샷이 치유). **검증=박스 측정**: `mode=stream` 실 기동(storage 적재+monitoring push+`XINFO GROUPS`) + **재시작 무손실·무중복**(복구 검증, 부하 중 앱 kill→재시작→DB count 일치) + 적재 처리량 재측정(vs 인메모리 큐). 로컬 Testcontainers 불가 → 기능은 CI, 재시작/스케일은 박스. |
 | **메모** | **검증 규율(반복 실패 교훈, 2026-07-02)**: DB쿼리·배선(@Conditional)·인프라 변경은 **로컬 `test`(단위/웹) green ≠ 완료** — CI `check`(실 DB 통합) + 박스(실 Redis)까지가 게이트. CI green 볼 때까지 완료 선언 안 하고, 검증 수준 정직 명시. 컨슈머 그룹 독립 커서(storage=0부터·monitoring=$부터), 적재후 XACK(멱등 재처리), push는 org 디바이스만. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
 
 ---
