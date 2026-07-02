@@ -13,7 +13,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -36,8 +35,9 @@ import org.springframework.transaction.annotation.Transactional;
  * 호환되지 않는다. {@code ps.setObject(n, json, Types.OTHER)}로 바인딩하면 PostgreSQL JDBC 드라이버가 텍스트를 컬럼
  * 타입(jsonb)에 맞게 변환한다.
  */
+// 조건 없이 항상 빈: queue(TelemetryBatchWorker)·stream(StreamStorageConsumer) 둘 다 쓴다.
+// 상태 없는 DAO라 direct 모드에서 생성돼도 무해(미사용).
 @Component
-@ConditionalOnProperty(name = "locus.ingest.mode", havingValue = "queue")
 public class TelemetryBatchDao {
 
     private static final String INSERT_TELEMETRY =
