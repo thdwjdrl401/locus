@@ -6,6 +6,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.thdwjdrl.locus.IntegrationTestBase;
+import com.thdwjdrl.locus.app.device.DeviceRepository;
+import com.thdwjdrl.locus.core.domain.Device;
 import com.thdwjdrl.locus.core.domain.DeviceType;
 import com.thdwjdrl.locus.core.domain.Location;
 import com.thdwjdrl.locus.core.domain.Telemetry;
@@ -16,20 +18,26 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.servlet.MockMvc;
 
-/** 조회 e2e — 실 TimescaleDB에서 naive 최신조회(상관 서브쿼리)가 디바이스당 최신 1건을 정확히 고르는지. */
+/** 조회 e2e — 실 TimescaleDB에서 최신조회(LATERAL)가 디바이스당 최신 1건을 정확히 고르는지. */
 class TelemetryQueryIntegrationTest extends IntegrationTestBase {
 
     @Autowired private MockMvc mockMvc;
     @Autowired private TelemetryRepository telemetryRepository;
+    @Autowired private DeviceRepository deviceRepository;
 
     private static final Instant T0 = Instant.parse("2026-06-22T00:00:00Z");
 
     @BeforeEach
     void clean() {
         telemetryRepository.deleteAll();
+        deviceRepository.deleteAll();
     }
 
+    // 최신조회 LATERAL은 device 테이블을 구동 축으로 쓰므로, telemetry뿐 아니라 device 행도 있어야 잡힌다.
     private void save(String deviceId, Instant recordedAt, double lat) {
+        if (deviceRepository.findByDeviceId(deviceId).isEmpty()) {
+            deviceRepository.save(new Device(deviceId, DeviceType.PHONE));
+        }
         telemetryRepository.save(
                 new Telemetry(
                         deviceId,
