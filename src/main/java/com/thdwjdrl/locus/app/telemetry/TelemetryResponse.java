@@ -51,4 +51,19 @@ public record TelemetryResponse(
                 LocationDto.from(t.getLocation()),
                 t.getMetrics());
     }
+
+    /** 도메인 {@link Telemetry}로 복원. Stream 페이로드(JSON)를 storage 컨슈머가 적재할 때 쓴다({@code from}의 역). */
+    public Telemetry toTelemetry() {
+        Location loc =
+                location == null
+                        ? null
+                        : new Location(
+                                location.lat(),
+                                location.lng(),
+                                location.accuracy(),
+                                location.altitude(),
+                                location.speed(),
+                                location.heading());
+        return new Telemetry(deviceId, deviceType, recordedAt, receivedAt, loc, metrics);
+    }
 }

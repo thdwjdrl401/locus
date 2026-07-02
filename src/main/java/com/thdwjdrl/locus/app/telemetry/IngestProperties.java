@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li>{@code direct}(기본) — 요청당 단건 저장 + Device upsert(현 동작 = M1 A0).
  *   <li>{@code queue} — 인메모리 큐 + 워커 배치 적재(M1 A2). fsync를 N건당 1회로 분할.
+ *   <li>{@code stream} — Redis Stream 발행(M4b B). fan-out: storage/monitoring 컨슈머 그룹(ADR 0007).
  * </ul>
  *
  * <p>나머지는 배치 거동 손잡이: 배치 크기·최대 지연·큐 용량과, Device upsert 교란변수 격리용 토글({@code device-upsert=false} = M1
@@ -37,6 +38,12 @@ public class IngestProperties {
 
     /** 배치 워커 스레드 수(queue 모드). 병렬 적재로 단일 워커 처리율 한계를 넘긴다(M2-par). DB 풀 크기 이하로 둔다. */
     private int workers = 1;
+
+    /** Redis Stream 키(stream 모드, ADR 0007 fan-out 버퍼). */
+    private String streamKey = "telemetry.stream";
+
+    /** Stream 최대 길이(근사 절단, MAXLEN). 초과분은 오래된 것부터 버림 — 단기 버퍼, 보존은 TimescaleDB. */
+    private long streamMaxlen = 1_000_000;
 
     public String getMode() {
         return mode;
@@ -84,5 +91,21 @@ public class IngestProperties {
 
     public void setWorkers(int workers) {
         this.workers = workers;
+    }
+
+    public String getStreamKey() {
+        return streamKey;
+    }
+
+    public void setStreamKey(String streamKey) {
+        this.streamKey = streamKey;
+    }
+
+    public long getStreamMaxlen() {
+        return streamMaxlen;
+    }
+
+    public void setStreamMaxlen(long streamMaxlen) {
+        this.streamMaxlen = streamMaxlen;
     }
 }

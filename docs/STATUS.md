@@ -6,14 +6,14 @@
 
 ---
 
-## 현재 포커스 — M4b(A) 실시간 push 박스 검증 완료 → B(Redis Streams)
+## 현재 포커스 — M4b(B) Redis Streams 골격 코드 완성 → 실 Redis 검증·측정
 
 | | |
 |---|---|
-| **한 줄** | **A(WebSocket 실시간 push) 박스 검증 완료(2026-07-02).** 지도 폴링 → 스냅샷(REST LATERAL) + STOMP 조직 토픽 델타 push. 마커 실시간 이동 확인. WebSocket 정상(nginx `Upgrade` 헤더 프록시 수정 — 없으면 SockJS HTTP 폴백). 소스무관 포트(`LiveUpdatePublisher`)라 B에서 WebSocket 층 재사용. |
-| **방금 끝낸 것** | A 데모 검증(시뮬레이터 실시간 이동). direct 모드 **풀 고갈** 겪음 = B 필요 실증(push를 적재 핫패스에 두면 HDD ~33 req/s 한계, 50대 시뮬레이터가 커넥션 16 고갈). **`findLatestPerDevice`(전체)도 LATERAL** — org 없는 `/latest` = DISTINCT ON 10M = 24분 지뢰(오늘 풀 고갈·truncate 블록 진범) 제거. WebSocketConfig·`LiveUpdatePublisher`+WS 구현·`DirectIngestWriter` 커밋후 push·`index.html` STOMP. |
-| **다음 한 걸음** | **B(Redis Streams)**: 인메모리 큐 → Stream `storage`/`monitoring` CG, `XACK`/`XPENDING`/`XCLAIM`·멱등·크래시 복구. **push를 `monitoring` 컨슈머로 이동**(적재 핫패스와 분리 → 고처리량 적재 + push 공존, 오늘 풀 고갈의 근본 해결). 부수: push 지연 측정, 네이티브 쿼리(LATERAL) 통합테스트. |
-| **메모** | direct 모드 push는 HDD ~33 req/s 한계 — 50대 시뮬레이터가 풀 고갈시킴(적재 핫패스에 push+fsync). B의 Stream 분리가 답. push는 **org 있는 디바이스만**(시뮬레이터 신규는 org 없음 → `UPDATE device SET org_id` 필요). A→B = push 소스만 교체(인프로세스 → Stream 컨슈머). SLO: 업링크 10k·조회 1만·다운링크 ~500. |
+| **한 줄** | **B(Redis Streams) 청크 1~3 코드 완성(2026-07-02, 컴파일·기존 test green).** `mode=stream`: 수집 → Stream XADD(`StreamIngestWriter`, MAXLEN 근사절단) → **독립 컨슈머 그룹 둘**: `storage`(배치 적재, `StreamStorageConsumer`) + `monitoring`(실시간 push, `StreamMonitoringConsumer`). **push가 적재 핫패스 → monitoring 컨슈머로 이동** = A 데모 때 겪은 풀 고갈의 근본 해결. |
+| **방금 끝낸 것** | A(WebSocket push) 박스 검증 완료. B 청크 1~3: `StreamIngestWriter`(producer) · `StreamStorageConsumer`(XREADGROUP→배치적재→적재후 XACK, ON CONFLICT 멱등) · `StreamMonitoringConsumer`(monitoring 그룹 최신부터→push) · `DeviceOrgResolver`(org 해석을 적재 아닌 push 소비 시점에) · `TelemetryResponse.toTelemetry`(Stream 페이로드 복원) · IngestProperties stream 설정. |
+| **다음 한 걸음** | **실 Redis 검증**(로컬 test는 컴파일·회귀만 — Redis 없음): Testcontainers Redis 통합테스트 or 박스 `mode=stream` 실행(storage 적재 + monitoring push + 지도 실시간). 그다음 **청크 4**: 크래시 복구(`XPENDING`/`XAUTOCLAIM`로 죽은 컨슈머 pending 회수) + 측정(재시작 무손실·무중복, 적재 처리량 재측정 vs 인메모리 큐). |
+| **메모** | 컨슈머 그룹은 각자 독립 커서 → storage·monitoring 둘 다 모든 메시지 봄. storage=0부터(전부 적재), monitoring=최신($)부터(과거 replay push 안 함). 적재후에만 XACK → 크래시 시 pending 재처리(멱등이라 중복 무해). push는 org 있는 디바이스만. A→B = push 소스만 교체(DirectIngestWriter→monitoring 컨슈머), 포트·WebSocket 동일. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
 
 ---
 
