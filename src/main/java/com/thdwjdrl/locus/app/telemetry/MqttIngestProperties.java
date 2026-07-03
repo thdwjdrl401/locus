@@ -32,6 +32,16 @@ public class MqttIngestProperties {
     /** 브로커 클라이언트 식별자. */
     private String clientId = "locus-ingest";
 
+    /**
+     * 인입 처리 워커 스레드 수. 0=인라인(Paho 단일 콜백 스레드에서 직접 처리, 현행). N>0이면 매뉴얼 ack + 바운드 익스큐터로 오프로드해
+     * 역직렬화·검증·XADD를 병렬화(측정: 단일 콜백이 인입을 묶는 병목, M-MQTT.md). ack는 처리 성공 후에만 → at-least-once 유지.
+     * before/after 토글이라 기본 0.
+     */
+    private int workerThreads = 0;
+
+    /** 오프로드 큐 용량(worker-threads>0일 때). 가득 차면 CallerRuns로 Paho 스레드가 직접 실행(백프레셔, 무손실). */
+    private int queueCapacity = 10000;
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -70,5 +80,21 @@ public class MqttIngestProperties {
 
     public void setClientId(String clientId) {
         this.clientId = clientId;
+    }
+
+    public int getWorkerThreads() {
+        return workerThreads;
+    }
+
+    public void setWorkerThreads(int workerThreads) {
+        this.workerThreads = workerThreads;
+    }
+
+    public int getQueueCapacity() {
+        return queueCapacity;
+    }
+
+    public void setQueueCapacity(int queueCapacity) {
+        this.queueCapacity = queueCapacity;
     }
 }

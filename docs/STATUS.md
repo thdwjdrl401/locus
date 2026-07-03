@@ -12,7 +12,7 @@
 |---|---|
 | **한 줄** | **M-MQTT 착수(2026-07-02)**: IoT 표준 수집 전송(디바이스 uplink) 추가. 어댑터가 브로커 구독→`TelemetryRequest` 역직렬화→검증→**기존 `TelemetryIngestService.ingest()` 합류**(적재 경로 공유, core 변경 0, ADR 0007). 브로커=**Mosquitto**(새 인프라 1개, §3.4). HTTP 수집과 다른 계층·공존. |
 | **직전 완료 (M4b B)** | Redis Streams 적재 fan-out 박스 측정: **지속 10k 무손실**(워커4·MAXLEN400K)·**재시작 at-least-once**. 상세 [measurements/M4b.md](measurements/M4b.md)·[raw](measurements/M4b-raw/). 커밋 `f481eb2`·CI green. |
-| **다음 한 걸음** | **측정 완료 — 병목 규명(2026-07-03)** → [measurements/M-MQTT.md](measurements/M-MQTT.md). **MQTT 단일 Paho 콜백 스레드가 인입을 ~3.25K/s로 묶는다. 같은 stream 스토리지가 HTTP로는 ~9.7K/s(디스크 65%)를 같은 날 처리 → 병목은 적재가 아니라 수집 어댑터의 인입(3배 차).** 저인입이라 스토리지가 28행 작은 배치로 커밋 남발(~100/s ≈ HDD fsync 천장) → 디스크 90%는 스토리지 한계가 아니라 저인입 증상(대조군 HTTP로 격리). 내부 무손실(received=inserted=DB, dropped=0)·연결 1만 유지·초과분 브로커 드롭. **다음 = 런2(미측정)**: 인입 병렬화(콜백→바운드 익스큐터/다중 구독)로 스토리지 천장(~9.7K)까지, ack 순서·크래시 손실 설계 후 before/after 측정. 부하도구 함정(template:// 파일모드·`%TIMESTAMPMS%`·`--ulimit`·`docker kill`·브로커 nofile 1M)은 `load/mqtt-*`·M-MQTT.md에 기록. |
+| **다음 한 걸음** | **측정 완료 — 병목 규명(2026-07-03)** → [measurements/M-MQTT.md](measurements/M-MQTT.md). **MQTT 단일 Paho 콜백 스레드가 인입을 ~3.25K/s로 묶는다. 같은 stream 스토리지가 HTTP로는 ~9.7K/s(디스크 65%)를 같은 날 처리 → 병목은 적재가 아니라 수집 어댑터의 인입(3배 차).** 저인입이라 스토리지가 28행 작은 배치로 커밋 남발(~100/s ≈ HDD fsync 천장) → 디스크 90%는 스토리지 한계가 아니라 저인입 증상(대조군 HTTP로 격리). 내부 무손실(received=inserted=DB, dropped=0)·연결 1만 유지·초과분 브로커 드롭. **런2 구현 완료(2026-07-03, 측정 대기)**: 인입 오프로드 토글 `locus.mqtt.worker-threads`(0=인라인 현행·기본, N=매뉴얼 ack + 바운드 익스큐터 병렬화). 큐 가득참=CallerRuns 백프레셔. at-least-once 유지(XADD 성공 후 ack). 통합테스트 `MqttOffloadIngestIntegrationTest` 동반. **다음 = before/after 측정**: `MQTT_WORKER_THREADS` 0 vs 8로 flat 10K, 인입이 3.25K→스토리지 천장(~9.7K)까지 오르나. CI green 확인 후 박스 측정. 부하도구 함정(template:// 파일모드·`%TIMESTAMPMS%`·`--ulimit`·`docker kill`·브로커 nofile 1M)은 `load/mqtt-*`·M-MQTT.md에 기록. |
 | **메모 / 보류** | **M4b-A 시작점(데모 발견, 2026-07-02)**: 10k 실시간 관제의 병목은 파이프라인이 아니라 **관제 화면** — 스냅샷 `GET /latest` 10k=**4.87MB/0.5s**(서버측 정상)이나 브라우저가 **마커 1만 개 DOM 렌더**에서 멈춤. 개선 후보: 경량 렌더셋(→~300KB) + canvas/클러스터/뷰포트 컬링. // **검증 규율**: 새 서브시스템은 통합테스트 동반, CI green까지 완료 선언 금지. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
 
 ---
@@ -71,7 +71,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 | **M1** | 적재 포화점 높이기(fsync 분할) | ✅ (배치로 ~44×) | 성능 측정 | — |
 | **M2** | **TimescaleDB 전환**(순차 저장) | ✅ (~3.8× → 지속 10k 무손실) | PostgreSQL·시계열 | TimescaleDB |
 | **M4** | **실시간: 읽기경로 + Streams fan-out** | ✅ 코어 — M4a(읽기 ~250×)·M4b(지속 10k 무손실·재시작 at-least-once). 잔여: M4b-A(push 측정·관제 화면 스케일링)·인증(가칭 M4c) | WebSocket | Redis |
-| **M-MQTT** | **MQTT 수집 경로** | 🔄 수집 경로+측정 완료. 병목=인입(단일 콜백 스레드 3.25K, 스토리지는 9.7K 여유). 개선 런2 예정 | MQTT | Mosquitto |
+| **M-MQTT** | **MQTT 수집 경로** | 🔄 병목 규명 완료(인입=단일 콜백 3.25K, 스토리지 9.7K 여유). 런2 인입 오프로드 구현(토글 `worker-threads`)·before/after 측정 대기 | MQTT | Mosquitto |
 | **M3** | 추상화 검증(디바이스 타입) | ⬜ | 설계 | — |
 | **M5** | 도달/이탈 판정(geofence) | ⬜ | — | (Redis Stream CG) |
 | **M6** | 민감정보 보호·보존 | ⬜ | — | (TimescaleDB retention) |

@@ -101,6 +101,9 @@ locus:
 
     qos: ${MQTT_QOS:1} # 1=at-least-once(중복은 ON CONFLICT dedup) · 0=fire-forget. 측정 변수.
     client-id: ${MQTT_CLIENT_ID:locus-ingest}
+    # 인입 병렬화(런2). 0=인라인(단일 콜백, 현행) · N>0=매뉴얼 ack + 익스큐터 오프로드. before/after 토글. 상세 M-MQTT.md.
+    worker-threads: ${MQTT_WORKER_THREADS:0}
+    queue-capacity: ${MQTT_QUEUE_CAPACITY:10000} # 오프로드 큐(가득 차면 CallerRuns 백프레셔)
 
 logging:
   level:
