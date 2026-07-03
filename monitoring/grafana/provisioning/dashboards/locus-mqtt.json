@@ -79,6 +79,37 @@
       "fieldConfig": { "defaults": { "unit": "Bps", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(node_disk_written_bytes_total{device=~\"$disk\"}[1m])", "legendFormat": "{{device}} write B/s" } ]
+    },
+    { "id": 30, "type": "row", "title": "4 · 스트림 적재 (경계 C — storage 컨슈머가 XADD를 따라가는가)", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 27 }, "panels": [] },
+    {
+      "id": 31, "type": "timeseries", "title": "인입 vs 적재 (accepted/s vs inserted/s — 벌어지면 스트림 적체·트림 위험)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(locus_mqtt_received_total[30s]) - rate(locus_mqtt_dropped_total[30s])", "legendFormat": "accepted/s (인입)" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(locus_ingest_inserted_total[30s])", "legendFormat": "inserted/s (적재, ON CONFLICT 미삽입 포함 과대)" }
+      ]
+    },
+    {
+      "id": 32, "type": "timeseries", "title": "배치 flush 소요 (avg·max — 적재 병목 시 상승)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(locus_ingest_flush_seconds_sum[30s]) / rate(locus_ingest_flush_seconds_count[30s])", "legendFormat": "avg" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "locus_ingest_flush_seconds_max", "legendFormat": "max" }
+      ]
+    },
+    {
+      "id": 33, "type": "timeseries", "title": "flush 에러율 (적재 실패 → XACK 안 함 → pending 재처리)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 20 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(locus_ingest_flush_errors_total[30s])", "legendFormat": "flush errors/s" } ]
     }
   ]
 }
