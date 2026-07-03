@@ -1,0 +1,22 @@
+=== http-repro — HTTP 경로 대조 (같은 박스·같은 stream 스토리지, MQTT와 같은 날) ===
+목적: MQTT 3.25K가 스토리지 한계인지 인입 한계인지 격리. 스토리지 코드는 HTTP·MQTT 공유.
+
+앱: INGEST_MODE=stream INGEST_WORKERS=4 --locus.ingest.stream-maxlen=400000 (MQTT 런과 동일)
+부하(맥): k6 run -e BASE_URL=http://192.168.219.124:8093 -e DEVICES=12000 -e RATES=10000 -e HOLD=300s load/telemetry-capacity.js
+
+--- k6 요약 ---
+  http_req_failed  rate=0.00% (0 / 3,007,432)
+  http_req_duration p(95)=234.5ms  med=8.01ms  avg=29.26ms  max=539ms
+  http_reqs.......: 3,007,432   9398.12/s   (status 202)
+  dropped_iterations: 92,568 (289.27/s)   ← k6가 10K를 약간 못 채움
+  vus_max: 2000
+
+--- Prometheus (부하 구간) ---
+  HTTP 202/s: [9674, 9647, 10003, 10002, 9645, 10001, 8953]   ← 지속 ~9.7K
+  디스크 %util: [0.66, 0.60, 0.69, 0.68, 0.65, 0.69, 0.73]      ← ~65%, 여유
+
+--- 대조 결론 ---
+  HTTP  ~9,700/s @ 디스크 65% (배치 꽉 참)
+  MQTT  ~3,250/s @ 디스크 90% (배치 28행, 커밋 ~100/s)
+  같은 스토리지가 3배 처리 → 병목은 스토리지 아니라 MQTT 인입(단일 콜백 스레드).
+  저인입일수록 디스크가 더 포화(작은-배치 fsync) — 스토리지 한계가 아님을 실증.
