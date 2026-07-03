@@ -40,8 +40,10 @@ export const options = {
       executor: "ramping-arrival-rate",
       startRate: 0,
       timeUnit: "1s", // target 단위 = 초당 요청 = 1Hz 디바이스 수
-      preAllocatedVUs: 100,
-      maxVUs: 2000, // 서버가 느려지면 in-flight VU↑ → 넉넉히(부족하면 dropped_iterations)
+      preAllocatedVUs: Number(__ENV.PRE_VUS || 100),
+      // 서버가 느려지면 in-flight VU↑ → 넉넉히(부족하면 dropped_iterations = 부하도구 한계).
+      // 천장 탐색 시 MAX_VUS를 올려 부하도구가 병목이 안 되게(예: 10K 위 측정 = 6000).
+      maxVUs: Number(__ENV.MAX_VUS || 2000),
       stages,
     },
   },
