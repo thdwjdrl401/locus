@@ -104,6 +104,9 @@ locus:
     # 인입 병렬화(런2). 0=인라인(단일 콜백, 현행) · N>0=매뉴얼 ack + 익스큐터 오프로드. before/after 토글. 상세 M-MQTT.md.
     worker-threads: ${MQTT_WORKER_THREADS:0}
     queue-capacity: ${MQTT_QUEUE_CAPACITY:10000} # 오프로드 큐(가득 차면 CallerRuns 백프레셔)
+    # 구독 연결 수(런2 2번째 슬라이스). 1=단일(현행) · N>1=shared subscription($share/{group}/...)으로 분배.
+    connections: ${MQTT_CONNECTIONS:1}
+    share-group: ${MQTT_SHARE_GROUP:locus}
 
 logging:
   level:

@@ -1,5 +1,7 @@
 package com.thdwjdrl.locus.app.telemetry;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -23,11 +25,16 @@ import org.springframework.stereotype.Component;
  * <p>connect·subscribe·재접속을 직접 쥔다 — MQTT의 간헐연결 전제에 맞춰 {@code automaticReconnect}로 끊기면 재접속하고, {@code
  * connectComplete}에서 <b>재접속 후에도 재구독</b>한다. 받은 메시지는 {@link MqttTelemetryHandler}로 넘긴다.
  *
- * <p><b>인입 병렬화(측정 M-MQTT.md)</b>: {@code messageArrived}는 Paho 단일 콜백 스레드에서 실행된다 — 인라인 처리는 인입을
- * ~3.25K/s로 묶는다(같은 스토리지가 HTTP로는 ~9.7K). {@code worker-threads>0}이면 역직렬화·검증·XADD를 바운드 익스큐터로 오프로드하고,
- * <b>매뉴얼 ack</b>로 처리 성공 후에만 {@code messageArrivedComplete}를 호출한다(크래시 시 미ack분은 브로커가 재전송 =
- * at-least-once 유지, 스토리지 XACK 복구와 같은 원리). 큐가 차면 {@code CallerRuns}로 Paho 스레드가 직접 실행해 백프레셔를 건다(무손실).
- * {@code worker-threads=0}(기본)이면 인라인·auto-ack(현행 동작 보존, before/after 토글).
+ * <p><b>인입 병렬화(측정 M-MQTT.md 런2)</b>: 두 축으로 병렬화한다.
+ *
+ * <ul>
+ *   <li><b>처리</b>({@code worker-threads>0}): 역직렬화·검증·XADD를 바운드 익스큐터로 오프로드. <b>매뉴얼 ack</b>로 처리 성공
+ *       후에만 {@code messageArrivedComplete}(크래시 시 미ack분은 브로커 재전송 = at-least-once). 큐가 차면 {@code
+ *       CallerRuns}로 백프레셔(무손실). 0(기본)이면 인라인·auto-ack(현행 보존).
+ *   <li><b>수신</b>({@code connections>1}): N개 Paho 클라이언트가 <b>shared subscription</b>({@code
+ *       $share/{group}/{prefix}/+})으로 구독 → 브로커가 연결들에 메시지를 분배(중복 없음). 단일 연결의 QoS1 인플라이트 창·수신 스레드가
+ *       파이프 폭을 제한하던 병목을 넓힌다. 1(기본)이면 plain {@code {prefix}/+} 단일 연결(현행 보존).
+ * </ul>
  */
 @Component
 @ConditionalOnProperty(name = "locus.mqtt.enabled", havingValue = "true")
@@ -38,7 +45,7 @@ public class PahoMqttSubscriber implements MqttSubscriber {
     private final MqttIngestProperties props;
     private final MqttTelemetryHandler handler;
 
-    private volatile IMqttClient client;
+    private final List<IMqttClient> clients = new ArrayList<>();
     private volatile ThreadPoolExecutor executor; // null = 인라인 모드
     private volatile boolean running = false;
 
@@ -49,80 +56,94 @@ public class PahoMqttSubscriber implements MqttSubscriber {
 
     @Override
     public void start() {
+        int conns = Math.max(1, props.getConnections());
+        if (props.getWorkerThreads() > 0) {
+            executor = newExecutor(props.getWorkerThreads(), props.getQueueCapacity());
+        }
         try {
-            client = new MqttClient(props.getUrl(), props.getClientId(), new MemoryPersistence());
-            if (props.getWorkerThreads() > 0) {
-                // 오프로드 모드: 매뉴얼 ack로 처리 성공 후에만 ack(at-least-once). connect 전에 설정.
-                executor = newExecutor(props.getWorkerThreads(), props.getQueueCapacity());
-                client.setManualAcks(true);
+            for (int i = 0; i < conns; i++) {
+                clients.add(connectOne(i, conns));
             }
-            MqttConnectOptions options = new MqttConnectOptions();
-            options.setAutomaticReconnect(true);
-            options.setCleanSession(true);
-            client.setCallback(
-                    new MqttCallbackExtended() {
-                        @Override
-                        public void connectComplete(boolean reconnect, String serverUri) {
-                            // identity는 토픽에({prefix}/{deviceId}) — 단일 레벨 와일드카드로 전 디바이스 구독.
-                            String filter = props.getTopic() + "/+";
-                            try {
-                                client.subscribe(filter, props.getQos());
-                                log.info(
-                                        "MQTT 구독 (filter={}, qos={}, reconnect={}, workers={})",
-                                        filter,
-                                        props.getQos(),
-                                        reconnect,
-                                        props.getWorkerThreads());
-                            } catch (MqttException e) {
-                                log.error("MQTT 구독 실패 (filter={})", filter, e);
-                            }
-                        }
-
-                        @Override
-                        public void connectionLost(Throwable cause) {
-                            log.warn(
-                                    "MQTT 연결 끊김(자동 재접속): {}",
-                                    cause == null ? "unknown" : cause.toString());
-                        }
-
-                        @Override
-                        public void messageArrived(String topic, MqttMessage message) {
-                            if (executor == null) {
-                                handler.handle(topic, message.getPayload()); // 인라인·auto-ack
-                                return;
-                            }
-                            // 오프로드: 처리 후 매뉴얼 ack. payload를 미리 꺼내 태스크에 넘긴다.
-                            int id = message.getId();
-                            int qos = message.getQos();
-                            byte[] payload = message.getPayload();
-                            executor.execute(
-                                    () -> {
-                                        try {
-                                            handler.handle(topic, payload);
-                                        } finally {
-                                            // 처리 실패(드롭)도 ack — 포이즌 메시지 무한 재전송 방지. 크래시(미ack)만 재전송.
-                                            ack(id, qos);
-                                        }
-                                    });
-                        }
-
-                        @Override
-                        public void deliveryComplete(IMqttDeliveryToken token) {}
-                    });
-            client.connect(options);
             running = true;
             log.info(
-                    "MQTT 구독자 시작 (url={}, clientId={}, workers={})",
+                    "MQTT 구독자 시작 (url={}, connections={}, workers={})",
                     props.getUrl(),
-                    props.getClientId(),
+                    conns,
                     props.getWorkerThreads());
         } catch (MqttException e) {
             throw new IllegalStateException("MQTT 연결 실패: " + props.getUrl(), e);
         }
     }
 
+    /** 연결 하나 생성 — 콜백은 자기 클라이언트({@code self})를 캡처해 구독·ack를 그 연결로 수행. */
+    private IMqttClient connectOne(int index, int total) throws MqttException {
+        String clientId = total > 1 ? props.getClientId() + "-" + index : props.getClientId();
+        IMqttClient self = new MqttClient(props.getUrl(), clientId, new MemoryPersistence());
+        if (executor != null) {
+            self.setManualAcks(true); // connect 전에 설정
+        }
+        // connections>1이면 shared subscription으로 분배, 아니면 현행 plain 필터.
+        String filter =
+                total > 1
+                        ? "$share/" + props.getShareGroup() + "/" + props.getTopic() + "/+"
+                        : props.getTopic() + "/+";
+        MqttConnectOptions options = new MqttConnectOptions();
+        options.setAutomaticReconnect(true);
+        options.setCleanSession(true);
+        self.setCallback(
+                new MqttCallbackExtended() {
+                    @Override
+                    public void connectComplete(boolean reconnect, String serverUri) {
+                        try {
+                            self.subscribe(filter, props.getQos()); // 재접속 후에도 재구독
+                            log.info(
+                                    "MQTT 구독 (id={}, filter={}, qos={}, reconnect={})",
+                                    clientId,
+                                    filter,
+                                    props.getQos(),
+                                    reconnect);
+                        } catch (MqttException e) {
+                            log.error("MQTT 구독 실패 (filter={})", filter, e);
+                        }
+                    }
+
+                    @Override
+                    public void connectionLost(Throwable cause) {
+                        log.warn(
+                                "MQTT 연결 끊김(자동 재접속, id={}): {}",
+                                clientId,
+                                cause == null ? "unknown" : cause.toString());
+                    }
+
+                    @Override
+                    public void messageArrived(String topic, MqttMessage message) {
+                        if (executor == null) {
+                            handler.handle(topic, message.getPayload()); // 인라인·auto-ack
+                            return;
+                        }
+                        int id = message.getId();
+                        int qos = message.getQos();
+                        byte[] payload = message.getPayload();
+                        executor.execute(
+                                () -> {
+                                    try {
+                                        handler.handle(topic, payload);
+                                    } finally {
+                                        // 드롭도 ack(포이즌 무한 재전송 방지). 크래시(미ack)만 재전송. ack는 도착한 그 연결로.
+                                        ack(self, id, qos);
+                                    }
+                                });
+                    }
+
+                    @Override
+                    public void deliveryComplete(IMqttDeliveryToken token) {}
+                });
+        self.connect(options);
+        return self;
+    }
+
     /** 처리 성공/드롭 후 매뉴얼 ack. ack 실패(예: 종료 중 연결 끊김)는 미ack로 남아 재전송 = at-least-once. */
-    private void ack(int messageId, int qos) {
+    private void ack(IMqttClient client, int messageId, int qos) {
         try {
             client.messageArrivedComplete(messageId, qos);
         } catch (MqttException e) {
@@ -162,15 +183,15 @@ public class PahoMqttSubscriber implements MqttSubscriber {
                 exec.shutdownNow();
             }
         }
-        if (client == null) {
-            return;
+        for (IMqttClient c : clients) {
+            try {
+                c.disconnect();
+                c.close();
+            } catch (MqttException e) {
+                log.warn("MQTT 종료 실패: {}", e.toString());
+            }
         }
-        try {
-            client.disconnect();
-            client.close();
-        } catch (MqttException e) {
-            log.warn("MQTT 종료 실패: {}", e.toString());
-        }
+        clients.clear();
     }
 
     @Override

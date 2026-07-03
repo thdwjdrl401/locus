@@ -42,6 +42,16 @@ public class MqttIngestProperties {
     /** 오프로드 큐 용량(worker-threads>0일 때). 가득 차면 CallerRuns로 Paho 스레드가 직접 실행(백프레셔, 무손실). */
     private int queueCapacity = 10000;
 
+    /**
+     * 구독 연결 수. 1=단일 연결(현행, plain {@code {prefix}/+}). N>1이면 N개 Paho 클라이언트가 <b>shared
+     * subscription</b>({@code $share/{group}/{prefix}/+})으로 구독 → 브로커가 연결들에 메시지를 분배(중복 없음). 단일 연결의
+     * QoS1 인플라이트 창·수신 스레드가 파이프 폭을 제한하는 병목(측정 M-MQTT.md 런2)을 연결 다중화로 넓힌다.
+     */
+    private int connections = 1;
+
+    /** shared subscription 그룹명(connections>1일 때 {@code $share/{group}/...}). */
+    private String shareGroup = "locus";
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -96,5 +106,21 @@ public class MqttIngestProperties {
 
     public void setQueueCapacity(int queueCapacity) {
         this.queueCapacity = queueCapacity;
+    }
+
+    public int getConnections() {
+        return connections;
+    }
+
+    public void setConnections(int connections) {
+        this.connections = connections;
+    }
+
+    public String getShareGroup() {
+        return shareGroup;
+    }
+
+    public void setShareGroup(String shareGroup) {
+        this.shareGroup = shareGroup;
     }
 }
