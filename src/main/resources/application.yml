@@ -16,6 +16,13 @@ spring:
     hikari:
       maximum-pool-size: ${DB_POOL_MAX:16}
 
+  # 숫자 timestamp = epoch 밀리초로 해석(M-MQTT, 2026-07-03). IoT 디바이스가 시각을 보내는
+  # 관례가 epoch millis라 수집 봉투가 받아야 한다. ISO-8601 문자열은 영향 없음(HTTP 기존 그대로).
+  # 가드: TelemetryRequestJsonTest(두 형식 고정).
+  jackson:
+    deserialization:
+      read-date-timestamps-as-nanoseconds: false
+
   jpa:
     hibernate:
       # M2~: ddl-auto=validate. 스키마는 Flyway(db/migration/V1__init_schema.sql) 소유.
