@@ -68,8 +68,7 @@ STEPS="2000 5000 10000" STEP_SECONDS=90 ./load/mqtt-ramp.sh   # 오버라이드 
 
 ## 측정 전 준비
 - [x] **대시보드 `locus-mqtt`에 stream 적재 패널(row 4)** — accepted/s vs inserted/s(벌어지면 스트림 적체·트림 위험) · 배치 flush avg/max · flush 에러율. 앱이 내보내는 실 메트릭(`locus_ingest_inserted_total`·`locus_ingest_flush_seconds`·`locus_ingest_flush_errors_total`)만 사용.
-- [ ] **XLEN·컨슈머 lag은 redis-cli로 캡처** — 앱은 XLEN/lag 게이지를 안 내보낸다(M4b도 redis-cli로 관측). redis-exporter를 새로 올리지 않는다(§3.4 인프라 하나씩). 런 중 `redis-cli XLEN telemetry.stream`·`XINFO GROUPS telemetry.stream`(lag)를 주기 샘플.
-- [ ] **브로커 $SYS 관측** — 경계 A 손실 귀속에 `$SYS/broker/publish/messages/dropped`·클라이언트별 큐를 봐야 한다. `mosquitto_sub -t '$SYS/#'` 캡처.
+- [x] **관측 스크립트 확정** — `scripts/mqtt-observe.sh`(박스)가 exporter 없는 값을 런별 폴더 `M-MQTT-raw/<RUN>/`에 남긴다: `sys.log`(브로커 $SYS·경계 A) · `stream.log`(XLEN·lag·경계 C) · `vmstat.log`(메모리 궤적·OOM) · `snap.log`(카운터+DB 정산 타임라인). XLEN/lag는 앱이 게이지를 안 내보내 redis-cli로 봄(redis-exporter는 §3.4 인프라 하나씩이라 안 올림).
 - [x] **부하 스크립트 확정** — `load/mqtt-ramp.sh`·`load/mqtt-sustain.sh`·`load/mqtt-payload.json.tmpl`. 템플릿 변수 치환(파일 모드)·`%TIMESTAMPMS%`·`--ulimit` 함정 반영.
 - [ ] **emqtt-bench 이미지 digest 핀** — 현재 `emqx/emqtt-bench:latest`(id `ae7f2d56cd49`). `docker inspect`로 sha256 확인해 스크립트 `IMG`·여기에 고정(재현성, 떠다니는 태그 금지).
 - [ ] `INGEST_MODE=stream`·`MQTT_ENABLED=true`·`INGEST_WORKERS=4`·`INGEST_STREAM_MAXLEN=400000`를 `.env`에 넣어 `scripts/run-app.sh`가 앱에 전달.
@@ -84,21 +83,13 @@ docker compose up -d                 # timescaledb + redis + mosquitto + node-ex
 scripts/run-app.sh
 free -h                              # Swap used = 0 (HDD 스왑 = 측정 무효)
 ```
-맥: `docker-compose.monitoring.yml`(Prometheus+Grafana) 기동 후 위 emqtt-bench pub. 상세 2-머신 절차는 [RUNBOOK](RUNBOOK.md).
-
-정산 캡처(런 종료 후):
+관측은 부하 직전에 박스에서 띄운다(런별 폴더로 저장, Ctrl-C 종료):
 ```bash
-# 앱 카운터
-curl -s http://박스IP:8093/actuator/prometheus | grep -E 'locus_mqtt_(received|dropped)_total|locus_ingest_(inserted|dropped)_total'
-# DB 진실값 (경계 B·C 정산의 기준)
-psql -c 'SELECT count(*) FROM telemetry;'
-# 스트림 적체·lag (경계 C — 트림 유실 위험)
-redis-cli XLEN telemetry.stream
-redis-cli XINFO GROUPS telemetry.stream        # storage 그룹 lag
-# 브로커 경계 A (발행 P 대비 도달 R). 런 내내 백그라운드로 샘플.
-mosquitto_sub -h <박스IP> -t '$SYS/broker/publish/messages/dropped' -t '$SYS/broker/messages/#'
-# 발행 P = emqtt-bench 종료 출력의 sent 총계
+RUN=ramp1 scripts/mqtt-observe.sh    # → docs/measurements/M-MQTT-raw/ramp1/{sys,stream,vmstat,snap}.log
 ```
+맥: `docker-compose.monitoring.yml`(Prometheus+Grafana) 기동 후 `./load/mqtt-ramp.sh`. 상세 2-머신 절차는 [RUNBOOK](RUNBOOK.md).
+
+정산(런 종료 후): `snap.log` 마지막 줄로 `DB증가분 == received − dropped`(경계 B·C) 확인, `received vs emqtt-bench sent 총계`(발행 P) 차이는 `sys.log`(경계 A)로 귀속. 트림 유실은 `stream.log`의 `lag`이 400K를 넘겼는지, OOM은 `vmstat.log`의 `free` 바닥으로 본다.
 
 ---
 
