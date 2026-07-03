@@ -90,7 +90,8 @@ locus:
   mqtt:
     enabled: ${MQTT_ENABLED:false}
     url: ${MQTT_URL:tcp://localhost:1883}
-    topic: ${MQTT_TOPIC:telemetry}
+    topic: ${MQTT_TOPIC:telemetry} # 접두 — 디바이스는 {topic}/{deviceId}로 발행, 구독은 {topic}/+
+
     qos: ${MQTT_QOS:1} # 1=at-least-once(중복은 ON CONFLICT dedup) · 0=fire-forget. 측정 변수.
     client-id: ${MQTT_CLIENT_ID:locus-ingest}
 

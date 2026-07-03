@@ -1,0 +1,84 @@
+{
+  "uid": "locus-mqtt",
+  "title": "Locus M-MQTT — MQTT 수집 경로",
+  "tags": ["locus", "mqtt", "write"],
+  "timezone": "",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-5m", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "disk",
+        "label": "디스크 디바이스",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": { "query": "label_values(node_disk_io_time_seconds_total, device)", "refId": "StandardVariableQuery" },
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    { "id": 1, "type": "row", "title": "1 · MQTT 수신", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "panels": [] },
+    {
+      "id": 2, "type": "timeseries", "title": "수신율 (msg/s)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(locus_mqtt_received_total[30s])", "legendFormat": "received/s" } ]
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "드롭율",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 20 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(locus_mqtt_dropped_total[30s])", "legendFormat": "dropped/s" } ]
+    },
+    { "id": 10, "type": "row", "title": "2 · 자원", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 }, "panels": [] },
+    {
+      "id": 11, "type": "timeseries", "title": "CPU",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "system_cpu_usage", "legendFormat": "system" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "process_cpu_usage", "legendFormat": "process" }
+      ]
+    },
+    {
+      "id": 12, "type": "timeseries", "title": "HikariCP 커넥션",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "hikaricp_connections_active", "legendFormat": "active" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "hikaricp_connections_pending", "legendFormat": "pending" }
+      ]
+    },
+    { "id": 20, "type": "row", "title": "3 · 디스크 쓰기", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 }, "panels": [] },
+    {
+      "id": 21, "type": "timeseries", "title": "디스크 %util",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 19 },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(node_disk_io_time_seconds_total{device=~\"$disk\"}[1m]) * 100", "legendFormat": "{{device}} %util" } ]
+    },
+    {
+      "id": 22, "type": "timeseries", "title": "디스크 쓰기 처리량",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 19 },
+      "fieldConfig": { "defaults": { "unit": "Bps", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(node_disk_written_bytes_total{device=~\"$disk\"}[1m])", "legendFormat": "{{device}} write B/s" } ]
+    }
+  ]
+}

@@ -19,7 +19,11 @@ public class MqttIngestProperties {
     /** 브로커 URL(tcp://host:port). */
     private String url = "tcp://localhost:1883";
 
-    /** 구독 토픽. 페이로드는 HTTP와 같은 TelemetryRequest JSON 봉투(deviceId 포함). */
+    /**
+     * 토픽 접두(prefix). 디바이스는 {@code {topic}/{deviceId}}로 발행하고 구독 필터는 {@code {topic}/+} — identity는
+     * 토픽에(브로커 ACL·last-will 기반). 페이로드는 HTTP와 같은 TelemetryRequest JSON 봉투(deviceId 생략 가능, 있으면 토픽과
+     * 일치해야 함).
+     */
     private String topic = "telemetry";
 
     /** 구독 QoS. 1=at-least-once(중복은 {@code ON CONFLICT} dedup) · 0=fire-forget. 측정 변수. */

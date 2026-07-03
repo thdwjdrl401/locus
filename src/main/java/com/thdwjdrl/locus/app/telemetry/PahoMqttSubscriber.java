@@ -50,15 +50,17 @@ public class PahoMqttSubscriber implements MqttSubscriber {
                     new MqttCallbackExtended() {
                         @Override
                         public void connectComplete(boolean reconnect, String serverUri) {
+                            // identity는 토픽에({prefix}/{deviceId}) — 단일 레벨 와일드카드로 전 디바이스 구독.
+                            String filter = props.getTopic() + "/+";
                             try {
-                                client.subscribe(props.getTopic(), props.getQos());
+                                client.subscribe(filter, props.getQos());
                                 log.info(
-                                        "MQTT 구독 (topic={}, qos={}, reconnect={})",
-                                        props.getTopic(),
+                                        "MQTT 구독 (filter={}, qos={}, reconnect={})",
+                                        filter,
                                         props.getQos(),
                                         reconnect);
                             } catch (MqttException e) {
-                                log.error("MQTT 구독 실패 (topic={})", props.getTopic(), e);
+                                log.error("MQTT 구독 실패 (filter={})", filter, e);
                             }
                         }
 
@@ -71,7 +73,7 @@ public class PahoMqttSubscriber implements MqttSubscriber {
 
                         @Override
                         public void messageArrived(String topic, MqttMessage message) {
-                            handler.handle(message.getPayload());
+                            handler.handle(topic, message.getPayload());
                         }
 
                         @Override

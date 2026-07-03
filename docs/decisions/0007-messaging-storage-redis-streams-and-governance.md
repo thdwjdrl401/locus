@@ -63,6 +63,7 @@ raw telemetry 테이블 ──▶ [운영 리플레이 원천] (모든 DeviceTyp
 
 - **MQTT 추가 이유**: IoT/센서·디지털트윈 도메인의 **표준 수집 프로토콜**. 저전력·간헐연결·QoS(0/1/2)·last-will이 폰/로봇 uplink에 맞다. HTTP는 유지(웹·간단 클라이언트), MQTT는 디바이스 전송 경로로 병행.
 - **위치**: `app.telemetry`에 MQTT 수신 어댑터 추가 → 기존 `TelemetryIngestService`(조립·검증)로 합류. 수집 *입구*만 늘리는 것, 적재 경로(포트·배치)는 공유.
+- **토픽 구조 = `telemetry/{deviceId}`** (2026-07-03): 디바이스 identity를 페이로드가 아니라 토픽에 둔다. 브로커는 페이로드를 보지 않으므로, identity가 토픽에 있어야 브로커 ACL(mosquitto `pattern write telemetry/%c`)·per-device last-will·스푸핑 방지가 가능하다. Azure IoT Hub도 `devices/{device-id}/messages/events/` 구조를 강제한다. 구독 필터는 `telemetry/+`, 페이로드 deviceId는 생략 가능(있으면 토픽과 일치해야 하고 불일치는 drop). 계기는 부하 도구(emqtt-bench)의 페이로드 템플릿 제약이었고, 근거는 도구와 무관하게 성립한다. 토픽은 디바이스 펌웨어와의 계약이라 클라이언트가 시뮬레이터·테스트뿐인 지금이 변경 비용이 가장 낮다.
 - **Kafka와의 구분**: MQTT는 *전송*, Kafka는 *내부 스트리밍 브로커*. MQTT 도입이 "Kafka 대신"이 아니다. Kafka는 여전히 측정-게이트 보류(위 §기각).
 
 ## 구현 점검 — 버퍼 내 PII (M6과 연결)

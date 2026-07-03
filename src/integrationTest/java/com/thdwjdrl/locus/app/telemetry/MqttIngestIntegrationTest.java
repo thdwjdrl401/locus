@@ -5,6 +5,7 @@ import static org.awaitility.Awaitility.await;
 
 import com.thdwjdrl.locus.IntegrationTestBase;
 import com.thdwjdrl.locus.app.device.DeviceRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -28,9 +29,10 @@ import org.testcontainers.utility.DockerImageName;
 /**
  * M-MQTT e2e — 실 Mosquitto + 실 TimescaleDB로 MQTT 수집 경로를 검증한다.
  *
- * <p>PG는 {@link IntegrationTestBase}에서 상속, Mosquitto는 이 클래스가 자체 컨테이너로 붙인다. 검증: (1) {@code
- * enabled=true} 컨텍스트가 뜨고 {@link PahoMqttSubscriber}가 구독 연결(로컬 unit test로는 못 잡는 DI/기동), (2) MQTT 발행
- * → HTTP와 같은 {@link TelemetryIngestService}로 합류해 DB 적재, (3) 검증 실패 봉투는 드롭되고 파이프라인은 유지.
+ * <p>PG는 {@link IntegrationTestBase}에서 상속, Mosquitto는 이 클래스가 자체 컨테이너로 붙인다. 토픽 계약: {@code
+ * telemetry/{deviceId}}(identity는 토픽에, 구독은 {@code telemetry/+}). 검증: (1) {@code enabled=true} 컨텍스트가
+ * 뜨고 {@link PahoMqttSubscriber}가 구독 연결, (2) MQTT 발행 → HTTP와 같은 {@link TelemetryIngestService}로 합류해
+ * DB 적재, (3) deviceId 없는 페이로드는 토픽 값으로 적재, (4) 토픽·페이로드 불일치는 드롭.
  */
 @TestPropertySource(
         properties = {
@@ -40,7 +42,7 @@ import org.testcontainers.utility.DockerImageName;
         })
 class MqttIngestIntegrationTest extends IntegrationTestBase {
 
-    private static final String TOPIC = "telemetry";
+    private static final String TOPIC_PREFIX = "telemetry";
 
     static final GenericContainer<?> MOSQUITTO =
             new GenericContainer<>(DockerImageName.parse("eclipse-mosquitto:2.0"))
@@ -68,6 +70,7 @@ class MqttIngestIntegrationTest extends IntegrationTestBase {
     @Autowired private TelemetryRepository telemetryRepository;
     @Autowired private DeviceRepository deviceRepository;
     @Autowired private MqttSubscriber subscriber; // 이음새 — 구현체는 Paho
+    @Autowired private MeterRegistry meters; // 측정 오라클 카운터(received/dropped) 검증
 
     @BeforeEach
     void clean() {
@@ -84,32 +87,52 @@ class MqttIngestIntegrationTest extends IntegrationTestBase {
 
     @Test
     void mqtt로_발행한_텔레메트리가_DB에_적재된다() throws Exception {
+        double receivedBefore = meters.get("locus.mqtt.received").counter().count();
         String ts = Instant.now().minusSeconds(5).toString();
         // 구독 준비 레이스 회피: 멱등 페이로드(동일 device+ts)를 여러 번 발행 → ON CONFLICT로 최종 1행.
-        publishRepeated(payload("mqtt-store", ts), 5);
+        publishRepeated("mqtt-store", payload("mqtt-store", ts), 5);
 
         await().atMost(Duration.ofSeconds(20))
                 .untilAsserted(() -> assertThat(telemetryRepository.count()).isEqualTo(1L));
         assertThat(deviceRepository.findByDeviceId("mqtt-store")).isPresent();
+        // 수신 카운터가 오라클로 동작하는지(구독 레이스로 5 미만일 수 있어 하한만).
+        assertThat(meters.get("locus.mqtt.received").counter().count())
+                .isGreaterThan(receivedBefore);
     }
 
     @Test
-    void 검증_실패_봉투는_드롭되고_파이프라인은_유지된다() throws Exception {
-        // deviceId 공백 → @NotBlank 위반 → 핸들러가 드롭. 이어 정상 sentinel로 파이프라인 생존 확인.
-        publishRepeated(payload("", Instant.now().minusSeconds(6).toString()), 3);
-        publishRepeated(payload("mqtt-sentinel", Instant.now().minusSeconds(5).toString()), 5);
+    void deviceId_없는_페이로드는_토픽_값으로_적재된다() throws Exception {
+        // 토픽이 기준 — 페이로드에 deviceId가 없으면 토픽 마지막 세그먼트로 채운다(emqtt-bench 템플릿 경로).
+        publishRepeated(
+                "mqtt-topic-only",
+                payloadWithoutDeviceId(Instant.now().minusSeconds(5).toString()),
+                5);
 
         await().atMost(Duration.ofSeconds(20))
                 .untilAsserted(
                         () ->
-                                assertThat(deviceRepository.findByDeviceId("mqtt-sentinel"))
+                                assertThat(deviceRepository.findByDeviceId("mqtt-topic-only"))
                                         .isPresent());
-        // 검증 실패분은 저장 안 됨 → sentinel 1행만.
         assertThat(telemetryRepository.count()).isEqualTo(1L);
-        assertThat(deviceRepository.findByDeviceId("")).isEmpty();
     }
 
-    private void publishRepeated(String payload, int times) throws Exception {
+    @Test
+    void 토픽과_페이로드_deviceId가_다르면_드롭된다() throws Exception {
+        double droppedBefore = meters.get("locus.mqtt.dropped").counter().count();
+        // 스푸핑 방지: 토픽(mqtt-a)과 페이로드(mqtt-b)가 다르면 저장하지 않는다.
+        publishRepeated("mqtt-a", payload("mqtt-b", Instant.now().minusSeconds(5).toString()), 3);
+
+        await().atMost(Duration.ofSeconds(20))
+                .untilAsserted(
+                        () ->
+                                assertThat(meters.get("locus.mqtt.dropped").counter().count())
+                                        .isGreaterThan(droppedBefore));
+        assertThat(telemetryRepository.count()).isZero();
+        assertThat(deviceRepository.findByDeviceId("mqtt-a")).isEmpty();
+        assertThat(deviceRepository.findByDeviceId("mqtt-b")).isEmpty();
+    }
+
+    private void publishRepeated(String deviceId, String payload, int times) throws Exception {
         IMqttClient pub =
                 new MqttClient(
                         brokerUrl(), "test-pub-" + UUID.randomUUID(), new MemoryPersistence());
@@ -120,7 +143,7 @@ class MqttIngestIntegrationTest extends IntegrationTestBase {
             for (int i = 0; i < times; i++) {
                 MqttMessage message = new MqttMessage(payload.getBytes(StandardCharsets.UTF_8));
                 message.setQos(1);
-                pub.publish(TOPIC, message);
+                pub.publish(TOPIC_PREFIX + "/" + deviceId, message);
                 Thread.sleep(150);
             }
         } finally {
@@ -139,5 +162,17 @@ class MqttIngestIntegrationTest extends IntegrationTestBase {
           "activity":"WALKING","appState":"FOREGROUND","permission":"WHILE_IN_USE","sharingEnabled":true
         }"""
                 .formatted(deviceId, timestamp);
+    }
+
+    private String payloadWithoutDeviceId(String timestamp) {
+        return """
+        {
+          "deviceType":"PHONE","timestamp":"%s",
+          "location":{"lat":37.0,"lng":127.0,"accuracy":5.0,"speed":1.0,"heading":90.0},
+          "battery":{"level":80,"charging":false},
+          "network":{"type":"CELLULAR","online":true},
+          "activity":"WALKING","appState":"FOREGROUND","permission":"WHILE_IN_USE","sharingEnabled":true
+        }"""
+                .formatted(timestamp);
     }
 }
