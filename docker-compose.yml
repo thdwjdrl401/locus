@@ -67,7 +67,14 @@ services:
     volumes:
       - ./docker/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
     cpuset: "0-5"
-    mem_limit: 256m
+    # 1만 커넥션 = 소켓 1만 개 = FD 1만+. 컨테이너 기본 nofile(~1024)이면 그 위는 tcp_closed로 거절된다.
+    # (발행자 emqtt-bench는 docker run --ulimit로 별도 상향 — 양쪽 다 풀어야 SLO 1만이 붙는다.)
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    # 커넥션당 버퍼 + max_queued로 메모리 증가 → 256m는 1만에서 빠듯. 512m로(예산 안: 앱1.5G+PG2G+redis0.5G+OS1G).
+    mem_limit: 512m
     healthcheck:
       test: ["CMD-SHELL", "mosquitto_sub -t '$$SYS/#' -C 1 -W 3 -h localhost || exit 1"]
       interval: 10s
