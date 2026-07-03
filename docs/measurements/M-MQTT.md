@@ -43,23 +43,19 @@ DB count
 DB count가 진실이다(카운터는 검증용). `locus.ingest.inserted`는 `batch.size()` 증가라 ON CONFLICT 미삽입분만큼 과대 → 오라클엔 `SELECT count(*) FROM telemetry`를 쓴다.
 
 ## 부하 모델 — emqtt-bench
-1Hz 디바이스 N대 = **N clients × 발행주기 1000ms = N msg/s**(M4b capacity 열린 모델의 MQTT 대응). 클라이언트 하나 = 디바이스 하나 = 토픽 `telemetry/{seq}` 하나.
+1Hz 디바이스 N대 = **N clients × 발행주기 1000ms = N msg/s**(M4b capacity 열린 모델의 MQTT 대응). 클라이언트 하나 = 디바이스 하나 = 토픽 `telemetry/{seq}` 하나. 부하 정의는 `load/`에 스크립트로 커밋(k6 `telemetry-capacity.js`와 같은 위치·역할):
 
 ```bash
-# 맥에서. 이미지 태그는 스모크에서 고정한 값으로 핀(재현성 — 떠다니는 태그 금지, docker-compose 원칙).
-ulimit -n 200000        # 1만 커넥션 → 파일디스크립터 상향
-docker run --rm --network host <emqtt-bench-image> pub \
-  -h <박스IP> -p 1883 \
-  -c 10000 \            # 동시 클라이언트(=디바이스) 수. 램프는 이 값을 단계별로 (2000→10000)
-  -i 5 \               # 커넥션 램프 간격(ms) — 접속 폭주 회피
-  -I 1000 \            # 클라이언트당 발행 주기(ms) → 디바이스당 1Hz
-  -t 'telemetry/%i' \  # 토픽 변수는 레벨 전체일 때만 치환(스모크 확인). %i=클라이언트 번호=deviceId
-  -q 1 \
-  -m '{"deviceType":"PHONE","timestamp":%TIMESTAMP%,"location":{"lat":37.0,"lng":127.0,"accuracy":5.0,"speed":1.0,"heading":90.0},"battery":{"level":80,"charging":false},"network":{"type":"CELLULAR","online":true},"activity":"WALKING","appState":"FOREGROUND","permission":"WHILE_IN_USE","sharingEnabled":true}'
+# 맥에서. 박스·이미지·단계는 env로 오버라이드. 페이로드는 load/mqtt-payload.json.tmpl.
+./load/mqtt-ramp.sh                                   # 런1 램프 2k→10k
+./load/mqtt-sustain.sh                                # 런3 지속 flat 10k 5분
+STEPS="2000 5000 10000" STEP_SECONDS=90 ./load/mqtt-ramp.sh   # 오버라이드 예
 ```
-- deviceId는 페이로드에서 생략 → 어댑터가 토픽 마지막 세그먼트로 채움(스푸핑 방지 계약, `MqttTelemetryHandler`).
-- `timestamp`는 따옴표 없는 숫자 = epoch ms(`read-date-timestamps-as-nanoseconds=false`, 결정 2026-07-03). `%TIMESTAMP%`는 메시지마다 갱신되어 디바이스당 ts 유일 → dedup 0.
-- emqtt-bench pub은 한 프로세스 안에서 도착률 램프를 못 한다 → **램프는 `-c`를 바꾼 단계별 런**(각 단계 ≥90s, M4b warm-up 교훈).
+- deviceId는 페이로드에서 생략 → 어댑터가 토픽(`telemetry/%i`) 마지막 세그먼트로 채움(스푸핑 방지 계약, `MqttTelemetryHandler`).
+- **함정 1 — 템플릿 변수는 `template://` 파일 모드에서만 치환.** `-m`에 리터럴 JSON을 주면 `%TIMESTAMPMS%`가 글자 그대로 나가 Jackson 파싱 실패로 **전량 드롭**. 그래서 페이로드를 파일로 마운트하고 `-m 'template:///payload.json'`(emqtt-bench `pub --help` 확인).
+- **함정 2 — `%TIMESTAMP%`(초) 아님 `%TIMESTAMPMS%`(밀리초).** 앱이 숫자를 epoch-ms로 읽어(`read-date-timestamps-as-nanoseconds=false`) 초값을 주면 1970년→`@ValidTimestamp`(과거 7일) 전량 드롭. ms는 메시지마다 갱신되어 디바이스당 `recorded_at` 유일 → dedup 0.
+- **함정 3 — `--ulimit nofile`은 `docker run`에 준다.** 호스트 `ulimit -n`은 컨테이너 안 emqtt-bench에 안 넘어가 커넥션 ~1000에서 `emfile`. 스크립트가 `--ulimit nofile=1048576:1048576`으로 처리.
+- emqtt-bench pub은 한 프로세스에서 도착률 램프를 못 하므로 **램프 = `-c` 단계별 런**(각 단계 기본 120s, warm-up 흡수 후 steady).
 
 ## 런 계획
 | 런 | 구성 | 보는 것 |
@@ -74,7 +70,8 @@ docker run --rm --network host <emqtt-bench-image> pub \
 - [x] **대시보드 `locus-mqtt`에 stream 적재 패널(row 4)** — accepted/s vs inserted/s(벌어지면 스트림 적체·트림 위험) · 배치 flush avg/max · flush 에러율. 앱이 내보내는 실 메트릭(`locus_ingest_inserted_total`·`locus_ingest_flush_seconds`·`locus_ingest_flush_errors_total`)만 사용.
 - [ ] **XLEN·컨슈머 lag은 redis-cli로 캡처** — 앱은 XLEN/lag 게이지를 안 내보낸다(M4b도 redis-cli로 관측). redis-exporter를 새로 올리지 않는다(§3.4 인프라 하나씩). 런 중 `redis-cli XLEN telemetry.stream`·`XINFO GROUPS telemetry.stream`(lag)를 주기 샘플.
 - [ ] **브로커 $SYS 관측** — 경계 A 손실 귀속에 `$SYS/broker/publish/messages/dropped`·클라이언트별 큐를 봐야 한다. `mosquitto_sub -t '$SYS/#'` 캡처.
-- [ ] **emqtt-bench 이미지 태그 핀** — 스모크에서 쓴 태그로 고정(재현성).
+- [x] **부하 스크립트 확정** — `load/mqtt-ramp.sh`·`load/mqtt-sustain.sh`·`load/mqtt-payload.json.tmpl`. 템플릿 변수 치환(파일 모드)·`%TIMESTAMPMS%`·`--ulimit` 함정 반영.
+- [ ] **emqtt-bench 이미지 digest 핀** — 현재 `emqx/emqtt-bench:latest`(id `ae7f2d56cd49`). `docker inspect`로 sha256 확인해 스크립트 `IMG`·여기에 고정(재현성, 떠다니는 태그 금지).
 - [ ] `INGEST_MODE=stream`·`MQTT_ENABLED=true`·`INGEST_WORKERS=4`·`INGEST_STREAM_MAXLEN=400000`를 `.env`에 넣어 `scripts/run-app.sh`가 앱에 전달.
 
 ## 실행 절차
