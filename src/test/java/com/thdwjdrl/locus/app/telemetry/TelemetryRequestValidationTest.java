@@ -2,26 +2,26 @@ package com.thdwjdrl.locus.app.telemetry;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.thdwjdrl.locus.app.telemetry.TelemetryRequest.BatteryDto;
 import com.thdwjdrl.locus.app.telemetry.TelemetryRequest.LocationDto;
-import com.thdwjdrl.locus.app.telemetry.TelemetryRequest.NetworkDto;
-import com.thdwjdrl.locus.core.domain.ActivityType;
-import com.thdwjdrl.locus.core.domain.AppState;
 import com.thdwjdrl.locus.core.domain.DeviceType;
-import com.thdwjdrl.locus.core.domain.NetworkType;
-import com.thdwjdrl.locus.core.domain.PermissionState;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import jakarta.validation.ValidatorFactory;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-/** M0 검증 규칙: 범위·필수·시각 정합성의 거부/허용을 프로그램적 Validator로 확인. */
+/**
+ * 공통칸 검증 규칙: 범위·필수·시각 정합성의 거부/허용을 프로그램적 Validator로 확인.
+ *
+ * <p>M3 봉투 일반화 이후 폰 형식(battery 범위·network enum) 검증은 DTO가 아니라 {@code PhoneHandler}가 본다(metrics 자유칸).
+ * 여기선 디바이스 무관 공통칸(deviceId·timestamp·location)만 검증한다.
+ */
 class TelemetryRequestValidationTest {
 
     private static ValidatorFactory factory;
@@ -42,18 +42,25 @@ class TelemetryRequestValidationTest {
         return validator.validate(target);
     }
 
+    private Map<String, Object> metrics() {
+        return Map.of(
+                "battery",
+                Map.of("level", 82, "charging", false),
+                "network",
+                Map.of("type", "CELLULAR", "online", true),
+                "permission",
+                "WHILE_IN_USE",
+                "sharingEnabled",
+                true);
+    }
+
     private TelemetryRequest valid() {
         return new TelemetryRequest(
                 "phone-0001",
                 DeviceType.PHONE,
                 Instant.now(),
                 new LocationDto(37.45, 126.70, 8.0, null, 1.2, 270.0),
-                new BatteryDto(82, false),
-                new NetworkDto(NetworkType.CELLULAR, true),
-                ActivityType.WALKING,
-                AppState.FOREGROUND,
-                PermissionState.WHILE_IN_USE,
-                true);
+                metrics());
     }
 
     @Test
@@ -69,12 +76,7 @@ class TelemetryRequestValidationTest {
                         DeviceType.PHONE,
                         Instant.now(),
                         null, // location 없음 (최소수집 등)
-                        null, // battery 없음
-                        null, // network 없음
-                        null, // activity 없음
-                        null, // appState 없음
-                        PermissionState.DENIED,
-                        false);
+                        null); // metrics 없음
         assertThat(validate(req)).isEmpty();
     }
 
@@ -103,23 +105,6 @@ class TelemetryRequestValidationTest {
     }
 
     @Test
-    void 배터리_범위초과는_거부된다() {
-        var req =
-                new TelemetryRequest(
-                        "phone-0001",
-                        DeviceType.PHONE,
-                        Instant.now(),
-                        new LocationDto(37.45, 126.70, 8.0, null, 1.2, 270.0),
-                        new BatteryDto(150, false),
-                        new NetworkDto(NetworkType.CELLULAR, true),
-                        ActivityType.WALKING,
-                        AppState.FOREGROUND,
-                        PermissionState.WHILE_IN_USE,
-                        true);
-        assertThat(validate(req)).isNotEmpty();
-    }
-
-    @Test
     void 미래_타임스탬프는_거부된다() {
         var req = copyWithTimestamp(Instant.now().plus(1, ChronoUnit.HOURS));
         assertThat(validate(req)).isNotEmpty();
@@ -136,45 +121,18 @@ class TelemetryRequestValidationTest {
     private TelemetryRequest copyWithDeviceId(String deviceId) {
         var v = valid();
         return new TelemetryRequest(
-                deviceId,
-                v.deviceType(),
-                v.timestamp(),
-                v.location(),
-                v.battery(),
-                v.network(),
-                v.activity(),
-                v.appState(),
-                v.permission(),
-                v.sharingEnabled());
+                deviceId, v.deviceType(), v.timestamp(), v.location(), v.metrics());
     }
 
     private TelemetryRequest copyWithLocation(LocationDto location) {
         var v = valid();
         return new TelemetryRequest(
-                v.deviceId(),
-                v.deviceType(),
-                v.timestamp(),
-                location,
-                v.battery(),
-                v.network(),
-                v.activity(),
-                v.appState(),
-                v.permission(),
-                v.sharingEnabled());
+                v.deviceId(), v.deviceType(), v.timestamp(), location, v.metrics());
     }
 
     private TelemetryRequest copyWithTimestamp(Instant timestamp) {
         var v = valid();
         return new TelemetryRequest(
-                v.deviceId(),
-                v.deviceType(),
-                timestamp,
-                v.location(),
-                v.battery(),
-                v.network(),
-                v.activity(),
-                v.appState(),
-                v.permission(),
-                v.sharingEnabled());
+                v.deviceId(), v.deviceType(), timestamp, v.location(), v.metrics());
     }
 }

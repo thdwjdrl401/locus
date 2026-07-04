@@ -93,15 +93,6 @@ public class MqttTelemetryHandler {
     /** 토픽에서 온 deviceId로 봉투 재구성(페이로드에 deviceId가 없을 때). */
     private TelemetryRequest withDeviceId(TelemetryRequest r, String deviceId) {
         return new TelemetryRequest(
-                deviceId,
-                r.deviceType(),
-                r.timestamp(),
-                r.location(),
-                r.battery(),
-                r.network(),
-                r.activity(),
-                r.appState(),
-                r.permission(),
-                r.sharingEnabled());
+                deviceId, r.deviceType(), r.timestamp(), r.location(), r.metrics());
     }
 }

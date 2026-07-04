@@ -1,9 +1,8 @@
 package com.thdwjdrl.locus.app.simulator;
 
+import com.thdwjdrl.locus.app.device.PhoneMetrics;
 import com.thdwjdrl.locus.app.telemetry.TelemetryRequest;
-import com.thdwjdrl.locus.app.telemetry.TelemetryRequest.BatteryDto;
 import com.thdwjdrl.locus.app.telemetry.TelemetryRequest.LocationDto;
-import com.thdwjdrl.locus.app.telemetry.TelemetryRequest.NetworkDto;
 import com.thdwjdrl.locus.core.domain.ActivityType;
 import com.thdwjdrl.locus.core.domain.AppState;
 import com.thdwjdrl.locus.core.domain.DeviceType;
@@ -18,6 +17,8 @@ import org.springframework.stereotype.Component;
  *
  * <p>보행자 random walk(작은 위경도 이동), 배터리 점진 감소, 가끔 신호 끊김/재연결. 무상태(공유 빈)라 {@link ThreadLocalRandom} 으로
  * 스레드 안전. 상태는 디바이스별 {@link SimState}에 있다.
+ *
+ * <p>M3 봉투 일반화 이후 폰 상태는 {@code metrics} 맵으로 보낸다 — {@link PhoneMetrics#toMetrics()}가 스키마의 단일 소유처.
  */
 @Component
 public class PhoneProfile implements MovementProfile {
@@ -46,6 +47,18 @@ public class PhoneProfile implements MovementProfile {
             s.online = !s.online;
         }
 
+        var metrics =
+                new PhoneMetrics(
+                                s.batteryLevel,
+                                false,
+                                s.online ? NetworkType.CELLULAR : NetworkType.NONE,
+                                s.online,
+                                ActivityType.WALKING,
+                                AppState.FOREGROUND,
+                                PermissionState.WHILE_IN_USE,
+                                true)
+                        .toMetrics();
+
         return new TelemetryRequest(
                 s.deviceId,
                 DeviceType.PHONE,
@@ -57,12 +70,7 @@ public class PhoneProfile implements MovementProfile {
                         null,
                         rnd.nextDouble() * 2,
                         rnd.nextDouble() * 360),
-                new BatteryDto(s.batteryLevel, false),
-                new NetworkDto(s.online ? NetworkType.CELLULAR : NetworkType.NONE, s.online),
-                ActivityType.WALKING,
-                AppState.FOREGROUND,
-                PermissionState.WHILE_IN_USE,
-                true);
+                metrics);
     }
 
     private static double clamp(double v, double min, double max) {

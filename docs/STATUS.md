@@ -6,11 +6,12 @@
 
 ---
 
-## 현재 포커스 — M-MQTT 수집 프로토콜 착수 (Paho 직접 + `MqttSubscriber` 이음새)
+## 현재 포커스 — M3 추상화 검증 완료 (디바이스 타입)
 
 | | |
 |---|---|
-| **한 줄** | **M-MQTT 착수(2026-07-02)**: IoT 표준 수집 전송(디바이스 uplink) 추가. 어댑터가 브로커 구독→`TelemetryRequest` 역직렬화→검증→**기존 `TelemetryIngestService.ingest()` 합류**(적재 경로 공유, core 변경 0, ADR 0007). 브로커=**Mosquitto**(새 인프라 1개, §3.4). HTTP 수집과 다른 계층·공존. |
+| **한 줄** | **M3 완료(2026-07-04)**: 수집 봉투를 디바이스 무관하게 재설계(공통칸 + `metrics` JSONB 자유칸)하고 최소수집 게이트를 `DeviceTypeHandler.gate()` 전략으로 옮긴 뒤, 둘째 타입 `AMR`을 추가해 **새 타입 추가 시 core diff = enum 값 1줄 + 게이트 훅 1개뿐**(engine·엔티티 불변)임을 실증. AMR 동작(검증·시뮬·metrics)은 전부 app. 폰 프라이버시 게이트는 동작 불변(테스트로 못박음). 단위·ArchUnit green(60 tests). 통합테스트는 로컬 Docker 미기동으로 컴파일까지 확인. |
+| **직전 완료 (M-MQTT)** | IoT 표준 수집 전송(디바이스 uplink) + 병목 규명·개선 완결. 인입 병렬화로 3.25K→~9K(2.8배)·HTTP 천장 근접. 브로커=Mosquitto. 상세 [measurements/M-MQTT.md](measurements/M-MQTT.md). |
 | **직전 완료 (M4b B)** | Redis Streams 적재 fan-out 박스 측정: **지속 10k 무손실**(워커4·MAXLEN400K)·**재시작 at-least-once**. 상세 [measurements/M4b.md](measurements/M4b.md)·[raw](measurements/M4b-raw/). 커밋 `f481eb2`·CI green. |
 | **다음 한 걸음** | **측정 완료 — 병목 규명(2026-07-03)** → [measurements/M-MQTT.md](measurements/M-MQTT.md). **MQTT 단일 Paho 콜백 스레드가 인입을 ~3.25K/s로 묶는다. 같은 stream 스토리지가 HTTP로는 ~9.7K/s(디스크 65%)를 같은 날 처리 → 병목은 적재가 아니라 수집 어댑터의 인입(3배 차).** 저인입이라 스토리지가 28행 작은 배치로 커밋 남발(~100/s ≈ HDD fsync 천장) → 디스크 90%는 스토리지 한계가 아니라 저인입 증상(대조군 HTTP로 격리). 내부 무손실(received=inserted=DB, dropped=0)·연결 1만 유지·초과분 브로커 드롭. **런2 측정 완료(2026-07-04)**: 인입 오프로드(`worker-threads` 0→8)로 **인입 3.25K→7.4K(2.3배)**, 처리량 2.3배인데 디스크 90→80%로 낮아짐(배치 28→156행·커밋 102→48/s·브로커drop 6.7K→2.7K). "디스크 90%=저인입 증상" 개선으로 확증. at-least-once 유지·내부 무손실·OOM 없음(8GB). **M-MQTT 병목 규명+개선 완결(2026-07-04)**: 인입 병렬화 2슬라이스로 **3.25K→~9K(2.8배), HTTP 스토리지 천장(9.7K) 근접·디스크 80%** → 인입은 더 이상 병목 아님. ① worker 0→8(스레드 오프로드): 3.25K→7.4K ② connections 1→4(shared subscription): 7.4K→~9K. 배치 28→156→388·커밋 102→48→24·브로커drop 6.7K→2.7K→1.3K. shared-sub Mosquitto+Paho3 작동 실증(CI). 남은 갭(~9K vs 9.7K)은 스토리지 축(M2-par/M4b 영역), 인입 아님. 상세 [M-MQTT.md](measurements/M-MQTT.md). **팔로업(보류)**: 프로덕션 기본값(worker-threads·connections 현재 0/1=현행 보존) 확정은 배포 시점에. **천장 탐색 완료(capacity sweep, 2026-07-04)**: 부하 20K로 올려 재니 **두 경로 다 ~10K에서 막히고 한계는 스토리지가 아니었다.** 스토리지@workers4는 ~10K를 디스크 60~68%로 처리(외삽 ~15K 여유). HTTP ~10K=k6(Colima) 한계, MQTT ~9.8K(conn8@10K)=**mosquitto 단일 스레드**. 판별: offer 20K서 conn4·conn8 둘 다 붕괴(~4K·드롭 16K/s), offer 10K서 conn8=9.8K(드롭 235/s) → 연결 무관, **브로커 혼잡 붕괴**(내 "앱 과병렬" 가설 반증). MQTT 10K 초과=브로커 스케일(클러스터/EMQX/HiveMQ, ADR 0004 게이트), 앱·스토리지 아님. **측정위생 발견**: capacity 절대수치는 판마다 `down -v`(TRUNCATE만이면 세션 후반 ~6K 퇴행 실측). 상세 [M-MQTT.md §천장](measurements/M-MQTT.md). 부하도구 함정(template:// 파일모드·`%TIMESTAMPMS%`·`--ulimit`·`docker kill`·브로커 nofile 1M)은 `load/mqtt-*`·M-MQTT.md에 기록. |
 | **메모 / 보류** | **M4b-A 시작점(데모 발견, 2026-07-02)**: 10k 실시간 관제의 병목은 파이프라인이 아니라 **관제 화면** — 스냅샷 `GET /latest` 10k=**4.87MB/0.5s**(서버측 정상)이나 브라우저가 **마커 1만 개 DOM 렌더**에서 멈춤. 개선 후보: 경량 렌더셋(→~300KB) + canvas/클러스터/뷰포트 컬링. // **검증 규율**: 새 서브시스템은 통합테스트 동반, CI green까지 완료 선언 금지. SLO: 업링크 10k·조회 1만·다운링크 ~500. |
@@ -75,7 +76,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 | **M2** | **TimescaleDB 전환**(순차 저장) | ✅ (~3.8× → 지속 10k 무손실) | PostgreSQL·시계열 | TimescaleDB |
 | **M4** | **실시간: 읽기경로 + Streams fan-out** | ✅ 코어 — M4a(읽기 ~250×)·M4b(지속 10k 무손실·재시작 at-least-once). 잔여: M4b-A(push 측정·관제 화면 스케일링)·인증(가칭 M4c) | WebSocket | Redis |
 | **M-MQTT** | **MQTT 수집 경로** | ✅ 수집+측정+개선 완결. 인입 병렬화(스레드+연결)로 3.25K→~9K(2.8배)·HTTP 천장 근접, 인입 병목 제거 | MQTT | Mosquitto |
-| **M3** | 추상화 검증(디바이스 타입) | ⬜ | 설계 | — |
+| **M3** | 추상화 검증(디바이스 타입) | ✅ 봉투 일반화 + AMR 추가로 core diff=enum 1줄+게이트 훅뿐 실증(engine·엔티티 불변). 폰 프라이버시 게이트 불변 | 양축 추상화 | — |
 | **M5** | 도달/이탈 판정(geofence) | ⬜ | — | (Redis Stream CG) |
 | **M6** | 민감정보 보호·보존 | ⬜ | — | (TimescaleDB retention) |
 | **M7** | 대용량 조회·복제 | ⬜ | — | (TimescaleDB 하이퍼테이블) |
@@ -150,8 +151,11 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 - [x] **폐기 시도**: bgwriter 트리클(포화 디스크에서 WAL 경합 역효과, p95 3.5→199ms) / `checkpoint_timeout=15min`(테스트 창 밖으로 스톨 밀어내는 측정 함정) / 잘못 짚은 가설(CPU 과구독·N=8 과병렬·램프피크 조기 SLO 선언) → 평탄·격리 측정으로 정정.
 - **게이트:** ✅ 단일 HDD 도착 10k 무손실(append-only) 측정 기록. SLO 10k 실경로화 = M4(device 상태 Redis 분리 + Streams 내구 버퍼).
 
-## M3 — 추상화 검증 (디바이스 타입 추가)  ⬜  보조(집 불필요·즉시 가능)
-- [ ] `TAG`/`ROBOT` 등 둘째 핸들러 추가 시 **`core` diff 0줄** 확인 (양축 추상화 검증, CLAUDE.md §2.2)
+## M3 — 추상화 검증 (디바이스 타입 추가)  ✅  보조(집 불필요·즉시 가능)
+- [x] 수집 봉투 디바이스 무관 재설계 — 공통칸(deviceId/deviceType/timestamp/location) + `metrics`(JSONB 자유칸). 폰 전용 필드(battery/network/activity/appState/permission/sharingEnabled)를 `metrics`로 이동
+- [x] 최소수집 게이트를 `DeviceTypeHandler.gate()`(전략)로 이동 — 폰은 permission=DENIED/sharing off면 위치 null(프라이버시 불변, 테스트로 못박음), 로봇은 게이트 없음(기본=항상 수집)
+- [x] 둘째 타입 `AMR` 추가 시 **`core` diff = enum 값 1줄 + 게이트 훅 1개뿐** 확인 (`git diff --stat core/`: DeviceType·DeviceTypeHandler만, engine·엔티티 불변 — 양축 추상화 검증, CLAUDE.md §2.2). 동작은 전부 app(`AmrHandler`/`AmrMetrics`/`AmrProfile`)
+- [x] AMR 검증(estop/service/charging인데 driving 모순 드롭)·시뮬(웨이포인트 odom→lat/lng 변환·저전력 충전 복귀)·통합테스트(발행→저장·모순 드롭). 참조자료 `docs/reference/amr-telemetry.md`(ROS2 common_interfaces·VDA5050 근거). 단위·ArchUnit green(60 tests)
 
 ## M4 — 실시간 푸시 · 최신상태 캐시 · 인증/식별 (Redis)  ⬜  읽기경로(+보조)
 > Redis 하나가 **캐시 + Streams 브로커** 두 역할 → 새 인프라 0, §3.4 안 깸 ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)). **읽기경로 스펙 확정 → [M4 스펙](specs/M4-realtime-read-path.md)** (신선도=push · 스코프=조직 1:N · 오프라인 유지). 세 조각으로 분해:

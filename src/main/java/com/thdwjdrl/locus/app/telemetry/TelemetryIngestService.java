@@ -2,6 +2,7 @@ package com.thdwjdrl.locus.app.telemetry;
 
 import com.thdwjdrl.locus.core.domain.DeviceType;
 import com.thdwjdrl.locus.core.domain.InvalidTelemetryException;
+import com.thdwjdrl.locus.core.domain.Location;
 import com.thdwjdrl.locus.core.domain.Telemetry;
 import com.thdwjdrl.locus.core.strategy.DeviceTypeHandler;
 import java.time.Clock;
@@ -43,12 +44,14 @@ public class TelemetryIngestService {
 
     public void ingest(TelemetryRequest request) {
         Instant receivedAt = clock.instant();
-        Telemetry telemetry = assembler.toTelemetry(request, receivedAt);
 
         DeviceTypeHandler handler = handlers.get(request.deviceType());
         if (handler == null) {
             throw new InvalidTelemetryException("지원하지 않는 deviceType: " + request.deviceType());
         }
+
+        Location gated = handler.gate(assembler.toLocation(request.location()), request.metrics());
+        Telemetry telemetry = assembler.toTelemetry(request, gated, receivedAt);
         handler.validate(telemetry);
 
         ingestPort.submit(telemetry);

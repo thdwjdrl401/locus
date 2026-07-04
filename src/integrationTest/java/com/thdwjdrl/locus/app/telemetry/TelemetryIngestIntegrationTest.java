@@ -36,9 +36,11 @@ class TelemetryIngestIntegrationTest extends IntegrationTestBase {
         {
           "deviceId":"phone-1","deviceType":"PHONE","timestamp":"%s",
           "location":{"lat":37.0,"lng":127.0,"accuracy":5.0,"speed":1.0,"heading":90.0},
-          "battery":{"level":80,"charging":false},
-          "network":{"type":"CELLULAR","online":true},
-          "activity":"WALKING","appState":"FOREGROUND","permission":"%s","sharingEnabled":%s
+          "metrics":{
+            "battery":{"level":80,"charging":false},
+            "network":{"type":"CELLULAR","online":true},
+            "activity":"WALKING","appState":"FOREGROUND","permission":"%s","sharingEnabled":%s
+          }
         }"""
                         .formatted(timestamp, permission, sharing);
         return mockMvc.perform(

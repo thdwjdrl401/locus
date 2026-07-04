@@ -37,9 +37,11 @@ class TelemetryControllerWebTest {
           %s
           "deviceType":"PHONE","timestamp":"%s",
           "location":{"lat":%s,"lng":127.0,"accuracy":5.0,"speed":1.0,"heading":90.0},
-          "battery":{"level":80,"charging":false},
-          "network":{"type":"CELLULAR","online":true},
-          "activity":"WALKING","appState":"FOREGROUND","permission":"WHILE_IN_USE","sharingEnabled":true
+          "metrics":{
+            "battery":{"level":80,"charging":false},
+            "network":{"type":"CELLULAR","online":true},
+            "activity":"WALKING","appState":"FOREGROUND","permission":"WHILE_IN_USE","sharingEnabled":true
+          }
         }"""
                 .formatted(deviceField, timestamp, lat);
     }

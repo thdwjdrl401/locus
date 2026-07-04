@@ -30,12 +30,15 @@ export default function () {
     deviceType: "PHONE",
     timestamp: ts,
     location: { lat: 37.5, lng: 127.0, accuracy: 5.0, speed: 1.0, heading: 90.0 },
-    battery: { level: 80, charging: false },
-    network: { type: "CELLULAR", online: true },
-    activity: "WALKING",
-    appState: "FOREGROUND",
-    permission: "WHILE_IN_USE",
-    sharingEnabled: true,
+    // M3에서 봉투 일반화로 폰 상태를 metrics로 중첩(공통칸=deviceId/deviceType/timestamp/location).
+    metrics: {
+      battery: { level: 80, charging: false },
+      network: { type: "CELLULAR", online: true },
+      activity: "WALKING",
+      appState: "FOREGROUND",
+      permission: "WHILE_IN_USE",
+      sharingEnabled: true,
+    },
   });
 
   const res = http.post(`${BASE}/api/telemetry`, body, {

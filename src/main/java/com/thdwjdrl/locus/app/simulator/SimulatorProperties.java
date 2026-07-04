@@ -10,8 +10,11 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "locus.simulator")
 public class SimulatorProperties {
 
-    /** 가상 디바이스 수. */
-    private int deviceCount = 50;
+    /** 가상 폰 수. */
+    private int phoneCount = 50;
+
+    /** 가상 AMR(로봇) 수. */
+    private int amrCount = 0;
 
     /** 전송 주기(ms). */
     private long intervalMs = 1000;
@@ -19,12 +22,20 @@ public class SimulatorProperties {
     /** 텔레메트리 전송 대상(자기 자신 또는 별도 인스턴스). */
     private String targetBaseUrl = "http://localhost:8093";
 
-    public int getDeviceCount() {
-        return deviceCount;
+    public int getPhoneCount() {
+        return phoneCount;
     }
 
-    public void setDeviceCount(int deviceCount) {
-        this.deviceCount = deviceCount;
+    public void setPhoneCount(int phoneCount) {
+        this.phoneCount = phoneCount;
+    }
+
+    public int getAmrCount() {
+        return amrCount;
+    }
+
+    public void setAmrCount(int amrCount) {
+        this.amrCount = amrCount;
     }
 
     public long getIntervalMs() {

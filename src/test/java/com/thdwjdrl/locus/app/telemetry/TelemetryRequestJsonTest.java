@@ -26,7 +26,7 @@ class TelemetryRequestJsonTest {
                 json.parseObject(
                         """
                         {"deviceId":"d-1","deviceType":"PHONE","timestamp":%d,
-                         "permission":"WHILE_IN_USE","sharingEnabled":true}
+                         "metrics":{"permission":"WHILE_IN_USE","sharingEnabled":true}}
                         """
                                 .formatted(epochMs));
         assertThat(parsed.timestamp()).isEqualTo(Instant.ofEpochMilli(epochMs));
@@ -38,7 +38,7 @@ class TelemetryRequestJsonTest {
                 json.parseObject(
                         """
                         {"deviceId":"d-1","deviceType":"PHONE","timestamp":"2026-07-02T08:16:44.396Z",
-                         "permission":"WHILE_IN_USE","sharingEnabled":true}
+                         "metrics":{"permission":"WHILE_IN_USE","sharingEnabled":true}}
                         """);
         assertThat(parsed.timestamp()).isEqualTo(Instant.parse("2026-07-02T08:16:44.396Z"));
     }

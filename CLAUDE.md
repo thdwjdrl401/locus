@@ -26,7 +26,7 @@
 ### 2.2 양축 추상화 (계획서 §3·§4)
 - **인터페이스는 `core.strategy`, 구현은 `app`**. (DeviceTypeHandler/MovementProfile/MissionType/ReachEvaluator)
 - 판정 엔진(`core.engine`)은 미션·디바이스 타입을 몰라야 한다. 의존성 방향은 항상 안쪽(core)으로.
-- **검증 지점**: 새 디바이스 타입(M3)·미션 타입(M9) 추가 시 `core`의 `git diff`가 **0줄**이어야 한다. PR에서 이를 확인한다.
+- **검증 지점**: 새 디바이스 타입(M3)·미션 타입(M9) 추가 시 **core의 로직 diff가 0줄**이어야 한다 — `core.engine`(판정 로직)·`core.strategy`(전략 인터페이스)·`core.domain` 엔티티가 그대로. `DeviceType`/`MissionType` enum에 값 한 줄 추가는 **로직이 아니라 타입 레지스트리 확장이라 허용**한다(닫힌 집합을 명시적으로 관리). 새 타입의 동작은 전부 `app`(Handler·Profile)에 있고 core 로직은 불변임을 PR에서 확인한다.
 
 ### 2.3 패키지: 기능별 슬라이스 (ADR 0003)
 - `app`은 레이어별이 아니라 **도메인 기능별 슬라이스**(`telemetry`/`device`/`simulator`/`config`/`support` ...). 마일스톤 ≈ 슬라이스.

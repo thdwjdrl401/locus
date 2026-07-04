@@ -3,8 +3,9 @@
 locus:
   simulator:
     enabled: true
-    # 가상 디바이스 수 (Java 21 가상 스레드 1대=1스레드)
-    device-count: 50
+    # 타입별 가상 디바이스 수 (Java 21 가상 스레드 1대=1스레드)
+    phone-count: 50
+    amr-count: 0
     # 전송 주기(ms)
     interval-ms: 1000
     # 텔레메트리 전송 대상 (자기 자신 또는 별도 서버 인스턴스)

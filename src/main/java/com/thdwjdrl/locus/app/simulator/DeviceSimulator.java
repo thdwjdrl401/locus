@@ -45,25 +45,35 @@ public class DeviceSimulator {
     @EventListener(ApplicationReadyEvent.class)
     public void start() {
         RestClient client = RestClient.create(props.getTargetBaseUrl());
-        MovementProfile phone = profiles.get(DeviceType.PHONE);
         executor = Executors.newVirtualThreadPerTaskExecutor();
 
+        launch(DeviceType.PHONE, "phone-%04d", props.getPhoneCount(), client);
+        launch(DeviceType.AMR, "amr-%04d", props.getAmrCount(), client);
+
+        log.info(
+                "시뮬레이터 시작: 폰 {}대 · AMR {}대 × {}ms 주기 → {}",
+                props.getPhoneCount(),
+                props.getAmrCount(),
+                props.getIntervalMs(),
+                props.getTargetBaseUrl());
+    }
+
+    private void launch(DeviceType type, String idFormat, int count, RestClient client) {
+        MovementProfile profile = profiles.get(type);
+        if (profile == null || count <= 0) {
+            return;
+        }
         ThreadLocalRandom rnd = ThreadLocalRandom.current();
-        for (int i = 0; i < props.getDeviceCount(); i++) {
-            String deviceId = String.format("phone-%04d", i);
-            // 한 지점(예: 현장학습 장소) 주변에 분산 시작
+        for (int i = 0; i < count; i++) {
+            String deviceId = String.format(idFormat, i);
+            // 한 지점(현장/사이트) 주변에 분산 시작. AMR은 이 좌표가 사이트 anchor.
             SimState state =
                     new SimState(
                             deviceId,
                             37.5 + rnd.nextDouble() * 0.01,
                             127.0 + rnd.nextDouble() * 0.01);
-            executor.submit(new SimulatedDevice(state, phone, client, props.getIntervalMs()));
+            executor.submit(new SimulatedDevice(state, profile, client, props.getIntervalMs()));
         }
-        log.info(
-                "시뮬레이터 시작: {}대 × {}ms 주기 → {}",
-                props.getDeviceCount(),
-                props.getIntervalMs(),
-                props.getTargetBaseUrl());
     }
 
     @PreDestroy
