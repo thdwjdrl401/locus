@@ -25,16 +25,17 @@ locus/
 │   │
 │   ├── core/                  ← 결정 0002·0003: 프레임워크 런타임-free 코어. ArchUnit 감시
 │   │   ├── domain/            도메인 모델 (Telemetry, Device, Location, enums)
-│   │   ├── strategy/          양축 추상화 인터페이스 (DeviceTypeHandler/MovementProfile 등)
+│   │   ├── strategy/          양축 추상화 인터페이스 (DeviceTypeHandler{validate·gate}/MovementProfile). gate=타입별 최소수집(M3)
 │   │   └── engine/            판정 엔진 자리 — M5에서 구현(현재 package-info만)
 │   │
 │   └── app/                   ← 결정 0003: 배선. 기능별 슬라이스
 │       ├── telemetry/         수집·조회·fan-out (M0~).
+│       │                        봉투(TelemetryRequest): 공통칸(id·type·time·location) + metrics 자유칸(JSONB, 타입 무관). Assembler는 passthrough(M3)
 │       │                        수집: HTTP(direct/queue/stream 토글, 0004 이음새) + MQTT(MqttSubscriber 이음새, 0007)
 │       │                        fan-out: Redis Streams storage/monitoring 컨슈머(M4b, 0007)
 │       │                        조회: LATERAL 최신조회(M4a) + LatestStateLookup 포트(db/cache 토글, 0004)
-│       ├── device/            디바이스 조회 + PhoneHandler (M0~). M3 새 타입
-│       ├── simulator/         ← 결정 0005: 폰 시뮬레이터 (simulator 프로파일, PhoneProfile 이동 모델)
+│       ├── device/            디바이스 조회 + 타입 핸들러(PhoneHandler·AmrHandler)·metrics(PhoneMetrics·AmrMetrics). M3에서 AMR 추가(core diff=enum 1줄)
+│       ├── simulator/         ← 결정 0005: 시뮬레이터. PhoneProfile·AmrProfile(M3, odom→lat/lng)로 타입별 생성
 │       ├── config/            인프라 설정 (WebSocket/STOMP 등)
 │       └── support/           횡단 관심사 (예외·응답·검증)
 │
