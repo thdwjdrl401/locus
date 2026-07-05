@@ -129,9 +129,13 @@ class StreamIngestIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void poison_엔트리는_드롭되고_워커는_살아_계속_적재한다() throws Exception {
-        // 스트림에 처리 불가 엔트리를 직접 XADD — 옛 코드는 재시작 pending 회수에서 이걸로 storage 워커를 죽였다.
+    void poison_엔트리는_드롭되고_storage와_monitoring_워커_모두_살아_계속_처리한다() throws Exception {
+        // 스트림에 처리 불가 엔트리를 직접 XADD — 옛 코드는 storage(재시작 pending 회수)에서 워커를 죽였고,
+        // monitoring에선 배치 중단으로 뒤따르는 정상 메시지를 starvation시켰다. 둘 다 같은 스트림을 읽는다.
         String stream = ingestProps.getStreamKey();
+        // push 검증용 org 디바이스 — poison 뒤 정상 메시지가 실제로 push되어야 monitoring 생존 확인.
+        deviceRepository.save(deviceWithOrg("after-poison", "org-9"));
+
         // (1) payload 필드 자체가 없음 = 트림된 유령 pending 재현(원래 크래시 원인).
         redis.opsForStream()
                 .add(StreamRecords.newRecord().in(stream).ofMap(Map.of("garbage", "no-payload")));
@@ -142,17 +146,22 @@ class StreamIngestIntegrationTest extends IntegrationTestBase {
                                 .in(stream)
                                 .ofMap(Map.of(StreamIngestWriter.PAYLOAD_FIELD, "{ not json")));
 
-        double poisonBefore = meters.get("locus.ingest.poison").counter().count();
+        double ingestPoisonBefore = meters.get("locus.ingest.poison").counter().count();
+        double pushBefore = meters.get("locus.push.sent").counter().count();
 
-        // 정상 엔트리 — 워커가 살아있어야 이게 적재된다(워커가 죽었으면 영원히 0건).
+        // 정상 엔트리 — 워커들이 살아있어야 적재(storage)+push(monitoring)된다.
         postTelemetry("after-poison", Instant.now().minusSeconds(5).toString());
 
         await().atMost(Duration.ofSeconds(15))
                 .untilAsserted(
                         () -> {
+                            // storage: poison 드롭 후 정상 1건 적재.
                             assertThat(telemetryRepository.count()).isEqualTo(1L);
                             assertThat(meters.get("locus.ingest.poison").counter().count())
-                                    .isGreaterThanOrEqualTo(poisonBefore + 2);
+                                    .isGreaterThanOrEqualTo(ingestPoisonBefore + 2);
+                            // monitoring: poison에 배치가 안 막히고 정상 메시지를 push.
+                            assertThat(meters.get("locus.push.sent").counter().count())
+                                    .isGreaterThan(pushBefore);
                         });
     }
 
