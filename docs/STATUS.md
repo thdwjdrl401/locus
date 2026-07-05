@@ -157,6 +157,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 - [x] 최소수집 게이트를 `DeviceTypeHandler.gate()`(전략)로 이동 — 폰은 permission=DENIED/sharing off면 위치 null(프라이버시 불변, 테스트로 못박음), 로봇은 게이트 없음(기본=항상 수집)
 - [x] 둘째 타입 `AMR` 추가 시 **`core` diff = enum 값 1줄 + 게이트 훅 1개뿐** 확인 (`git diff --stat core/`: DeviceType·DeviceTypeHandler만, engine·엔티티 불변 — 양축 추상화 검증, CLAUDE.md §2.2). 동작은 전부 app(`AmrHandler`/`AmrMetrics`/`AmrProfile`)
 - [x] AMR 검증(estop/service/charging인데 driving 모순 드롭)·시뮬(웨이포인트 odom→lat/lng 변환·저전력 충전 복귀)·통합테스트(발행→저장·모순 드롭). 참조자료 `docs/reference/amr-telemetry.md`(ROS2 common_interfaces·VDA5050 근거). 단위·ArchUnit green(60 tests)
+- [x] 박스 시뮬레이터 런타임 확인(2026-07-05): PHONE 40·AMR 10 ONLINE, 두 타입 같은 수집→저장 경로(PHONE 30,634·AMR 14,517건), AMR metrics에 odomX/Y/Theta·mapId 보존. **시뮬 리얼리즘 수정**: AMR 10대가 동일 초기 상태라 lockstep으로 겹쳐 움직이던 것 → 단일 사이트 anchor 공유 + `MovementProfile.seed()`로 순찰 루프에 시작 위상 분산(배터리도 stagger). 단위테스트 동반
 
 ## M4 — 실시간 푸시 · 최신상태 캐시 · 인증/식별 (Redis)  ⬜  읽기경로(+보조)
 > Redis 하나가 **캐시 + Streams 브로커** 두 역할 → 새 인프라 0, §3.4 안 깸 ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)). **읽기경로 스펙 확정 → [M4 스펙](specs/M4-realtime-read-path.md)** (신선도=push · 스코프=조직 1:N · 오프라인 유지). 세 조각으로 분해:

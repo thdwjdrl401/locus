@@ -32,9 +32,59 @@ public class AmrProfile implements MovementProfile {
     private static final int LOW_BATTERY = 20;
     private static final double METERS_PER_DEG_LAT = 111_320.0;
 
+    /** 단일 사이트(한 현장) anchor. 모든 AMR이 공유 — 지도에선 한 건물에 모이고, 실내 평면도 뷰에선 odom이 층 위 상대 위치가 된다. */
+    private static final double SITE_LAT = 37.5665;
+
+    private static final double SITE_LNG = 126.9780;
+
+    /** 순찰 루프 둘레(m) = 사각 네 변의 합. */
+    private static final double LOOP_M = 40.0;
+
     @Override
     public DeviceType deviceType() {
         return DeviceType.AMR;
+    }
+
+    /**
+     * AMR 편대를 단일 사이트에 심고 순찰 루프 위에 인덱스 비례로 분산한다 — 같은 초기 상태로 두면 10대가 lockstep으로 한 점에 겹쳐 움직이므로, 시작 위상을
+     * 벌려 편대가 같은 경로를 흩어져 순찰하게 만든다.
+     */
+    @Override
+    public void seed(SimState s, int index, int count) {
+        s.lat = SITE_LAT;
+        s.lng = SITE_LNG;
+        placeOnLoop(s, (double) index / Math.max(1, count) * LOOP_M);
+        // 배터리도 벌려 충전 복귀가 동시에 몰리지 않게 한다(55~99 분산).
+        s.batteryPercent = 55 + (index * 7) % 45;
+    }
+
+    /**
+     * 순찰 루프((0,0)→(10,0)→(10,10)→(0,10)→(0,0)) 위 호길이 {@code d}(m) 지점에 odom·헤딩·다음 웨이포인트를 놓는다. 이동
+     * 방향으로 헤딩을 맞춰 첫 프레임부터 자연스럽게 잇는다.
+     */
+    private static void placeOnLoop(SimState s, double d) {
+        double side = 10.0;
+        if (d < side) { // (0,0) → (10,0)
+            s.odomX = d;
+            s.odomY = 0;
+            s.odomTheta = 0;
+            s.waypointIndex = 0;
+        } else if (d < 2 * side) { // (10,0) → (10,10)
+            s.odomX = 10;
+            s.odomY = d - side;
+            s.odomTheta = Math.PI / 2;
+            s.waypointIndex = 1;
+        } else if (d < 3 * side) { // (10,10) → (0,10)
+            s.odomX = 10 - (d - 2 * side);
+            s.odomY = 10;
+            s.odomTheta = Math.PI;
+            s.waypointIndex = 2;
+        } else { // (0,10) → (0,0)
+            s.odomX = 0;
+            s.odomY = 10 - (d - 3 * side);
+            s.odomTheta = -Math.PI / 2;
+            s.waypointIndex = 3;
+        }
     }
 
     @Override

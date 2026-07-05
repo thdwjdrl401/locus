@@ -68,6 +68,53 @@ class AmrProfileTest {
     }
 
     @Test
+    void seed는_같은_사이트_anchor를_공유하되_odom_시작위상을_분산한다() {
+        int count = 10;
+        SimState first = seeded(0, count);
+        SimState second = seeded(1, count);
+        // 단일 사이트: anchor(lat/lng)는 모두 동일.
+        assertThat(second.lat).isEqualTo(first.lat);
+        assertThat(second.lng).isEqualTo(first.lng);
+        // 위상 분산: 시작 odom 지점이 서로 다르다(lockstep 겹침 방지).
+        assertThat(Math.hypot(second.odomX - first.odomX, second.odomY - first.odomY))
+                .isGreaterThan(0.0);
+    }
+
+    @Test
+    void seed한_모든_대의_시작_odom이_서로_다르다() {
+        int count = 10;
+        long distinct =
+                java.util.stream.IntStream.range(0, count)
+                        .mapToObj(i -> seeded(i, count))
+                        .map(s -> s.odomX + "," + s.odomY)
+                        .distinct()
+                        .count();
+        assertThat(distinct).as("%d대가 서로 다른 시작 위상", count).isEqualTo(count);
+    }
+
+    @Test
+    void seed한_봉투도_검증을_통과한다() {
+        SimState state = seeded(3, 10);
+        TelemetryRequest envelope = profile.step(state);
+        assertThat(validator.validate(envelope)).isEmpty();
+        Telemetry t =
+                new Telemetry(
+                        envelope.deviceId(),
+                        envelope.deviceType(),
+                        envelope.timestamp(),
+                        Instant.now(),
+                        null,
+                        envelope.metrics());
+        handler.validate(t);
+    }
+
+    private SimState seeded(int index, int count) {
+        SimState s = new SimState("amr-" + index, 37.5, 127.0);
+        profile.seed(s, index, count);
+        return s;
+    }
+
+    @Test
     void 배터리가_낮으면_충전소로_복귀해_충전한다() {
         SimState state = new SimState("amr-0001", 37.5, 127.0);
         state.batteryPercent = 15; // 저전력

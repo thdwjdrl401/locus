@@ -15,4 +15,13 @@ public interface MovementProfile {
 
     /** 상태를 한 프레임 진전시키고 보낼 봉투를 만든다. */
     TelemetryRequest step(SimState state);
+
+    /**
+     * 디바이스별 초기 상태를 심는다(런치 시 1회). 기본은 런치가 준 위치를 그대로 둔다. 타입별로 시작 위상·앵커를 분산해 편대가 lockstep으로 겹치지 않게 하려는
+     * 훅.
+     *
+     * @param index 이 타입 내 디바이스 순번(0-based)
+     * @param count 이 타입 총 대수
+     */
+    default void seed(SimState state, int index, int count) {}
 }

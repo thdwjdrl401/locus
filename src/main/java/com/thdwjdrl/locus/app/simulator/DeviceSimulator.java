@@ -72,6 +72,8 @@ public class DeviceSimulator {
                             deviceId,
                             37.5 + rnd.nextDouble() * 0.01,
                             127.0 + rnd.nextDouble() * 0.01);
+            // 타입별 초기 위상/앵커 분산(기본 no-op). AMR은 단일 사이트 공유 + 순찰 루프에 분산 배치.
+            profile.seed(state, i, count);
             executor.submit(new SimulatedDevice(state, profile, client, props.getIntervalMs()));
         }
     }
