@@ -275,40 +275,66 @@
     el.innerHTML = `<div class="empty">디바이스를 선택하면 상세가 표시됩니다.</div>`;
   };
 
-  // ── 사이드바 리스트 (타입 그룹 · 경고 우선 · 클릭 포커스) ───────
+  // ── 사이드바 리스트 (제자리 갱신 — 구조 변화 때만 재생성해 호버 깜빡임 방지) ──
+  function swatchColor(t) {
+    const s = U.state(t);
+    return "var(--" + (s === "lowbat" ? "alert" : s) + ")";
+  }
+  function rowMarkup(t, selectedId, now) {
+    const age = now - Date.parse(t.recordedAt);
+    const staleCls = age > cfg.DEAD_MS ? "dead" : age > cfg.STALE_MS ? "stale" : "";
+    const b = U.battery(t);
+    const noloc = U.hasLocation(t) ? "" : " · 위치없음";
+    return (
+      `<div class="row ${t.deviceId === selectedId ? "selected" : ""} ${staleCls}" data-id="${t.deviceId}">` +
+      `<span class="swatch" style="background:${swatchColor(t)}"></span>` +
+      `<span class="rid">${t.deviceId}${noloc}</span>` +
+      `<span class="rbat">${b == null ? "" : b + "%"}</span>` +
+      `</div>`
+    );
+  }
+  function updateRow(row, t, selectedId, now) {
+    const age = now - Date.parse(t.recordedAt);
+    const cls = age > cfg.DEAD_MS ? " dead" : age > cfg.STALE_MS ? " stale" : "";
+    row.className = "row" + (t.deviceId === selectedId ? " selected" : "") + cls;
+    const b = U.battery(t);
+    row.children[0].style.background = swatchColor(t);
+    row.children[1].textContent = t.deviceId + (U.hasLocation(t) ? "" : " · 위치없음");
+    row.children[2].textContent = b == null ? "" : b + "%";
+  }
+
   Locus.renderList = function (el, devices, o) {
-    const selectedId = o.selectedId;
     const now = Date.now();
     const groups = { AMR: [], PHONE: [] };
     devices.forEach((t) => {
       if (o.visible && !o.visible(t)) return;
       (groups[t.deviceType] || (groups[t.deviceType] = [])).push(t);
     });
-
-    function rowHtml(t) {
-      const age = now - Date.parse(t.recordedAt);
-      const staleCls = age > cfg.DEAD_MS ? "dead" : age > cfg.STALE_MS ? "stale" : "";
-      const b = U.battery(t);
-      const s = U.state(t);
-      const noloc = U.hasLocation(t) ? "" : " · 위치없음";
-      return (
-        `<div class="row ${t.deviceId === selectedId ? "selected" : ""} ${staleCls}" data-id="${t.deviceId}">` +
-        `<span class="swatch" style="background:var(--${s === "lowbat" ? "alert" : s})"></span>` +
-        `<span class="rid">${t.deviceId}${noloc}</span>` +
-        `<span class="rbat">${b == null ? "" : b + "%"}</span>` +
-        `</div>`
-      );
-    }
-
-    let html = "";
+    const seq = [];
     ["AMR", "PHONE"].forEach((type) => {
       const list = groups[type] || [];
       if (!list.length) return;
       list.sort((a, b) => (U.isWarning(b) ? 1 : 0) - (U.isWarning(a) ? 1 : 0));
-      html += `<div class="group-head">${type} · ${list.length}</div>`;
-      html += list.map(rowHtml).join("");
+      seq.push({ kind: "head", key: "h:" + type + ":" + list.length, label: type + " · " + list.length });
+      list.forEach((t) => seq.push({ kind: "row", key: "r:" + t.deviceId, t }));
     });
-    el.innerHTML = html || `<div class="group-head">표시할 디바이스 없음</div>`;
+    // 키 시퀀스(멤버십·순서·카운트)가 그대로면 재생성 안 함 → 호버 중 DOM 파괴 없음
+    const keys = seq.map((s) => s.key).join("|");
+    if (el._keys !== keys) {
+      el.innerHTML =
+        seq
+          .map((s) =>
+            s.kind === "head" ? `<div class="group-head">${s.label}</div>` : rowMarkup(s.t, o.selectedId, now)
+          )
+          .join("") || `<div class="group-head">표시할 디바이스 없음</div>`;
+      el._keys = keys;
+    } else {
+      seq.forEach((s) => {
+        if (s.kind !== "row") return;
+        const row = el.querySelector('[data-id="' + s.t.deviceId + '"]');
+        if (row) updateRow(row, s.t, o.selectedId, now);
+      });
+    }
   };
 
   // ── 범례 ──────────────────────────────────────────────────────

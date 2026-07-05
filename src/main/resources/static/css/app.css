@@ -15,6 +15,22 @@
   --idle: #6b7684;
   --charging: #5cc8ff;
   --offline: #5a6572;
+  /* 테마 의존 값 (다크 기본) */
+  --map-bg: #12141a;
+  --mk-stroke: #f2f4f7;
+}
+
+/* 라이트 테마 — HUD의 토글 버튼이 body.light 를 붙임 */
+body.light {
+  --bg: #eef1f5;
+  --panel: #ffffff;
+  --panel-2: #f1f4f8;
+  --border: #d8dee6;
+  --text: #1b222b;
+  --muted: #5c6672;
+  --accent: #2563eb;
+  --map-bg: #dfe3e8;
+  --mk-stroke: #1b222b;
 }
 
 * {
@@ -112,7 +128,16 @@ body {
 #filters button.on {
   color: var(--text);
   border-color: var(--accent);
-  background: #1d2b3a;
+  background: rgba(74, 163, 255, 0.16);
+}
+.theme-btn {
+  background: var(--panel-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 3px 12px;
+  font-size: 12px;
+  cursor: pointer;
 }
 #sidebar-list {
   flex: 1;
@@ -137,7 +162,7 @@ body {
   background: var(--panel-2);
 }
 .row.selected {
-  background: #1d2b3a;
+  background: rgba(74, 163, 255, 0.16);
   border-left-color: var(--accent);
 }
 .row .rid {
@@ -187,7 +212,14 @@ body {
   height: 100%;
 }
 .leaflet-container {
-  background: #2b2f36; /* Esri Dark Gray 베이스 톤 — 타일 로딩 중에도 다크 */
+  background: var(--map-bg);
+}
+/* 다크: 컬러 지도의 톤만 낮춤(색 유지, 라벨 밝게 반전 → 가독성). 라이트: 원본 그대로. */
+.leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.85) saturate(0.9);
+}
+body.light .leaflet-tile-pane {
+  filter: none;
 }
 
 /* 상세 패널 */
@@ -245,7 +277,7 @@ body {
   right: 352px;
   bottom: 14px;
   z-index: 800;
-  background: rgba(22, 27, 34, 0.92);
+  background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px 10px;
@@ -284,7 +316,7 @@ body {
 .mk.state-lowbat { --mk: var(--alert); }
 .mk .body {
   fill: var(--mk);
-  stroke: #f2f4f7; /* 밝은 외곽선 — 다크 지도 위에서도 선명 */
+  stroke: var(--mk-stroke); /* 지도 톤에 맞춘 외곽선 (다크=밝게, 라이트=어둡게) */
   stroke-width: 1.2;
 }
 .mk .ring-bg {

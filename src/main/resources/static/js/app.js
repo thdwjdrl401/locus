@@ -7,12 +7,31 @@
   // 조직 스코프 — URL ?org=org-3, 기본 org-0.
   const ORG = new URLSearchParams(location.search).get("org") || "org-0";
 
-  // 지도 (적당히 어두운 다크 = Esri Dark Gray Canvas — 뮤트된 회색 다크 + 라벨. dark_all보다 밝아 가독성. API 키 불필요)
+  // 지도 = 컬러 OSM 한 장. 다크는 색을 죽이지 않고 CSS 필터로 톤만 낮춤(라벨은 밝게 반전돼 읽힘),
+  // 라이트는 필터 off. 테마는 body.light 클래스만 토글(팔레트·지도톤·마커 외곽선은 CSS가 처리).
   const map = L_.map("map", { zoomControl: true }).setView([37.5, 127.0], 13);
-  const esri = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/";
-  const esriOpts = { maxNativeZoom: 16, maxZoom: 19, attribution: "&copy; Esri" };
-  L_.tileLayer(esri + "World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", esriOpts).addTo(map);
-  L_.tileLayer(esri + "World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}", esriOpts).addTo(map);
+  L_.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap",
+  }).addTo(map);
+
+  const themeBtn = document.getElementById("theme-toggle");
+  function applyTheme(theme) {
+    const light = theme === "light";
+    document.body.classList.toggle("light", light);
+    themeBtn.textContent = light ? "다크" : "라이트";
+    try {
+      localStorage.setItem("locus-theme", theme);
+    } catch (e) {}
+  }
+  themeBtn.addEventListener("click", () =>
+    applyTheme(document.body.classList.contains("light") ? "dark" : "light")
+  );
+  let initTheme = "dark";
+  try {
+    initTheme = new URLSearchParams(location.search).get("theme") || localStorage.getItem("locus-theme") || "dark";
+  } catch (e) {}
+  applyTheme(initTheme);
 
   const devices = new Map(); // deviceId -> 최신 TelemetryResponse (단일 진실원)
   let selectedId = null;
