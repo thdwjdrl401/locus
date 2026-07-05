@@ -1,0 +1,346 @@
+/* Locus 관제 — 다크 관제센터 테마. 팔레트는 CSS 변수 한 곳에서 관리(라이트 토글 대비). */
+:root {
+  --bg: #0e1116;
+  --panel: #161b22;
+  --panel-2: #1c232c;
+  --border: #2a323c;
+  --text: #c9d4e0;
+  --muted: #7d8896;
+  --accent: #4aa3ff;
+  /* 상태 팔레트 (마커·칩 공용) */
+  --ok: #2ec26a;
+  --warn: #e0902f;
+  --alert: #e5484d;
+  --driving: #39d0c8;
+  --idle: #6b7684;
+  --charging: #5cc8ff;
+  --offline: #5a6572;
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  font-family: system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+
+/* 레이아웃: 상단 HUD · 좌 사이드바 · 중앙 지도 · 우 상세패널 */
+body {
+  display: grid;
+  grid-template-columns: 280px 1fr 340px;
+  grid-template-rows: 46px 1fr;
+  grid-template-areas:
+    "hud hud hud"
+    "sidebar map detail";
+}
+
+#hud {
+  grid-area: hud;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+#hud .brand {
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+#hud .metric {
+  color: var(--muted);
+}
+#hud .metric b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+#hud .warn-count b {
+  color: var(--alert);
+}
+#hud .spacer {
+  flex: 1;
+}
+#hud .conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+#hud .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+#hud .dot.up {
+  background: var(--ok);
+}
+#hud .dot.down {
+  background: var(--alert);
+}
+
+/* 사이드바 */
+#sidebar {
+  grid-area: sidebar;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+#filters {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+#filters button {
+  background: var(--panel-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+#filters button.on {
+  color: var(--text);
+  border-color: var(--accent);
+  background: #1d2b3a;
+}
+#sidebar-list {
+  flex: 1;
+  overflow-y: auto;
+}
+.group-head {
+  padding: 8px 12px 4px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+}
+.row:hover {
+  background: var(--panel-2);
+}
+.row.selected {
+  background: #1d2b3a;
+  border-left-color: var(--accent);
+}
+.row .rid {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row .rbat {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.row.stale {
+  opacity: 0.5;
+}
+.row.dead {
+  opacity: 0.3;
+}
+.row .swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--idle);
+  flex: none;
+}
+
+/* 상태 칩 */
+.chip {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  background: var(--panel-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.chip.ok { color: var(--ok); }
+.chip.warn { color: var(--warn); }
+.chip.alert { color: var(--alert); border-color: var(--alert); }
+.chip.driving { color: var(--driving); }
+.chip.charging { color: var(--charging); }
+.chip.offline { color: var(--offline); }
+
+/* 지도 */
+#map {
+  grid-area: map;
+  height: 100%;
+}
+.leaflet-container {
+  background: #0b0e12;
+}
+
+/* 상세 패널 */
+#detail {
+  grid-area: detail;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 14px;
+}
+#detail .empty {
+  color: var(--muted);
+  margin-top: 40px;
+  text-align: center;
+}
+#detail h2 {
+  margin: 0 0 2px;
+  font-size: 16px;
+}
+#detail .sub {
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+#detail .kv {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 4px 8px;
+  margin: 8px 0;
+}
+#detail .kv .k {
+  color: var(--muted);
+}
+#detail .kv .v {
+  font-variant-numeric: tabular-nums;
+}
+#detail .sec {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+#detail .sec-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+#detail .noloc {
+  color: var(--warn);
+}
+
+/* 범례 */
+#legend {
+  position: absolute;
+  right: 352px;
+  bottom: 14px;
+  z-index: 800;
+  background: rgba(22, 27, 34, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+#legend .li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 3px 0;
+}
+#legend .sw {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+/* divIcon 마커 — Leaflet 기본 흰 배경/테두리 제거 */
+.mk-wrap {
+  background: transparent;
+  border: none;
+}
+.mk {
+  --mk: var(--idle);
+}
+.mk.state-ok { --mk: var(--ok); }
+.mk.state-alert { --mk: var(--alert); }
+.mk.state-warn { --mk: var(--warn); }
+.mk.state-driving { --mk: var(--driving); }
+.mk.state-idle { --mk: var(--idle); }
+.mk.state-offline { --mk: var(--offline); }
+.mk.state-lowbat { --mk: var(--alert); }
+.mk .body {
+  fill: var(--mk);
+  stroke: #0e1116;
+  stroke-width: 1;
+}
+.mk .ring-bg {
+  fill: none;
+  stroke: #2a323c;
+  stroke-width: 3;
+}
+.mk .ring {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.mk .ring.bat-ok { stroke: var(--ok); }
+.mk .ring.bat-warn { stroke: var(--warn); }
+.mk .ring.bat-low { stroke: var(--alert); }
+.mk .pointer {
+  fill: var(--mk);
+}
+.mk .charging {
+  fill: var(--charging);
+  stroke: #0e1116;
+  stroke-width: 0.4;
+}
+/* 선택·스테일 */
+.leaflet-marker-icon.selected .mk .halo {
+  stroke: var(--accent);
+  opacity: 1;
+}
+.mk .halo {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  opacity: 0;
+}
+.leaflet-marker-icon.stale {
+  opacity: 0.5;
+  filter: grayscale(1);
+}
+.leaflet-marker-icon.dead {
+  opacity: 0.28;
+  filter: grayscale(1);
+}
+
+/* 좁은 화면: 사이드바·패널을 오버레이로 */
+@media (max-width: 900px) {
+  body {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "hud"
+      "map";
+  }
+  #sidebar,
+  #detail {
+    position: absolute;
+    top: 46px;
+    bottom: 0;
+    width: 260px;
+    z-index: 900;
+  }
+  #sidebar { left: 0; }
+  #detail { right: 0; }
+  #legend { display: none; }
+}
