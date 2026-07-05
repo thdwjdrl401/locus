@@ -187,7 +187,7 @@ body {
   height: 100%;
 }
 .leaflet-container {
-  background: #0b0e12;
+  background: #e9e6df; /* Voyager 밝은 베이스 — 타일 로딩 중에도 밝게 */
 }
 
 /* 상세 패널 */
@@ -270,6 +270,10 @@ body {
 }
 .mk {
   --mk: var(--idle);
+}
+/* 밝은 지도 위 마커 분리감 */
+.mk svg {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
 }
 .mk.state-ok { --mk: var(--ok); }
 .mk.state-alert { --mk: var(--alert); }
