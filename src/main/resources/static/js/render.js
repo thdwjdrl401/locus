@@ -8,6 +8,8 @@
     STALE_MS: 15000, // 이 시간 넘게 갱신 없으면 흐림
     DEAD_MS: 60000, // 이 시간 넘으면 더 흐림
     LOW_BATTERY: 20,
+    SLIDE_MS: 1000, // 위치 보간 시간(전송 주기와 맞춰 끊김 없이 이음)
+    SNAP_DEG: 0.05, // 이보다 크게 튀면 보간 대신 순간이동(재등장·텔레포트)
     // 범례 = 상태색 정의의 단일 출처
     legend: [
       { cls: "ok", label: "정상 / 폰 온라인" },
@@ -140,6 +142,46 @@
     return `${t.deviceId} · ${t.deviceType}${b == null ? "" : " · " + b + "%"} · ${s}`;
   }
 
+  // ── 위치 보간 (1초 간격을 프레임마다 이어 부드럽게. latlng 공간이라 줌에도 안전) ──
+  const sliding = new Map(); // marker -> {from, to, t0, dur}
+  let ticking = false;
+  function tick(now) {
+    sliding.forEach((a, m) => {
+      const k = Math.min(1, (now - a.t0) / a.dur);
+      m.setLatLng([a.from.lat + (a.to.lat - a.from.lat) * k, a.from.lng + (a.to.lng - a.from.lng) * k]);
+      if (k >= 1) sliding.delete(m);
+    });
+    if (sliding.size) requestAnimationFrame(tick);
+    else ticking = false;
+  }
+  function slideTo(m, lat, lng) {
+    const cur = m.getLatLng();
+    if (!cur) {
+      m.setLatLng([lat, lng]);
+      return;
+    }
+    const dLat = lat - cur.lat,
+      dLng = lng - cur.lng;
+    if (Math.abs(dLat) < 1e-9 && Math.abs(dLng) < 1e-9) {
+      sliding.delete(m);
+      return; // 사실상 정지 — 보간 불필요
+    }
+    if (Math.hypot(dLat, dLng) > cfg.SNAP_DEG) {
+      sliding.delete(m);
+      m.setLatLng([lat, lng]); // 큰 점프는 순간이동
+      return;
+    }
+    // 진행 중이면 현재 보간 위치(cur)에서 새 목표로 재조준 → 이어짐
+    sliding.set(m, { from: { lat: cur.lat, lng: cur.lng }, to: { lat: lat, lng: lng }, t0: performance.now(), dur: cfg.SLIDE_MS });
+    if (!ticking) {
+      ticking = true;
+      requestAnimationFrame(tick);
+    }
+  }
+  function stopSlide(m) {
+    sliding.delete(m);
+  }
+
   // ── 마커 렌더러 (교체 이음새: 나중 CanvasRenderer로 대체 가능) ──
   Locus.createMarkerRenderer = function (map, opts) {
     const onSelect = (opts && opts.onSelect) || function () {};
@@ -157,7 +199,10 @@
       const has = U.hasLocation(t);
       let m = markers.get(t.deviceId);
       if (!has) {
-        if (m && map.hasLayer(m)) map.removeLayer(m); // 위치 없음(프라이버시 게이트) → 지도서 빼되 리스트엔 유지
+        if (m) {
+          stopSlide(m);
+          if (map.hasLayer(m)) map.removeLayer(m); // 위치 없음(프라이버시 게이트) → 지도서 빼되 리스트엔 유지
+        }
         return;
       }
       const ll = [t.location.lat, t.location.lng];
@@ -168,7 +213,9 @@
         m.on("click", () => onSelect(t.deviceId));
         markers.set(t.deviceId, m);
       } else {
-        m.setLatLng(ll);
+        // 지도에 떠 있으면 프레임마다 보간, 아니면(첫 표시·필터복귀) 즉시 위치
+        if (map.hasLayer(m)) slideTo(m, t.location.lat, t.location.lng);
+        else m.setLatLng(ll);
         const sig = iconSignature(t);
         if (sig !== m._sig) {
           m.setIcon(buildIcon(t));
@@ -179,6 +226,7 @@
       if (show) {
         if (!map.hasLayer(m)) m.addTo(map);
       } else if (map.hasLayer(m)) {
+        stopSlide(m);
         map.removeLayer(m);
       }
       applyClasses(m); // setIcon이 엘리먼트를 재생성하므로 클래스 재적용
@@ -190,6 +238,7 @@
       remove(id) {
         const m = markers.get(id);
         if (m) {
+          stopSlide(m);
           map.removeLayer(m);
           markers.delete(id);
         }
