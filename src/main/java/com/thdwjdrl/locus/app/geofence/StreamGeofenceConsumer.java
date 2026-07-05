@@ -92,6 +92,11 @@ public class StreamGeofenceConsumer implements SmartLifecycle {
 
     @Override
     public void start() {
+        if (catalog.all().isEmpty()) {
+            // 판정할 지오펜스가 없으면 스트림을 읽지 않는다 — 불필요한 소비·contention 방지(§3.2).
+            log.info("Stream geofence 컨슈머 미가동 (시드 지오펜스 0)");
+            return;
+        }
         ensureGroup();
         running = true;
         worker = new Thread(this::runLoop, "stream-geofence");
