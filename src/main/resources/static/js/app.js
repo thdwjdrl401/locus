@@ -7,13 +7,12 @@
   // 조직 스코프 — URL ?org=org-3, 기본 org-0.
   const ORG = new URLSearchParams(location.search).get("org") || "org-0";
 
-  // 지도 (밝은 타일 = CARTO Voyager — 상태색 마커 대비·가독성. UI 패널은 다크 유지. API 키 불필요)
+  // 지도 (적당히 어두운 다크 = Esri Dark Gray Canvas — 뮤트된 회색 다크 + 라벨. dark_all보다 밝아 가독성. API 키 불필요)
   const map = L_.map("map", { zoomControl: true }).setView([37.5, 127.0], 13);
-  L_.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    subdomains: "abcd",
-    attribution: "&copy; OpenStreetMap · &copy; CARTO",
-  }).addTo(map);
+  const esri = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/";
+  const esriOpts = { maxNativeZoom: 16, maxZoom: 19, attribution: "&copy; Esri" };
+  L_.tileLayer(esri + "World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", esriOpts).addTo(map);
+  L_.tileLayer(esri + "World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}", esriOpts).addTo(map);
 
   const devices = new Map(); // deviceId -> 최신 TelemetryResponse (단일 진실원)
   let selectedId = null;
