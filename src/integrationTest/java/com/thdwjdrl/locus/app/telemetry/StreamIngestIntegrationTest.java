@@ -12,9 +12,12 @@ import com.thdwjdrl.locus.core.domain.DeviceType;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.connection.stream.StreamRecords;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -58,6 +61,8 @@ class StreamIngestIntegrationTest extends IntegrationTestBase {
     @Autowired private MeterRegistry meters;
     @Autowired private StreamStorageConsumer storageConsumer; // 스모크: stream 빈 배선 확인
     @Autowired private StreamMonitoringConsumer monitoringConsumer;
+    @Autowired private StringRedisTemplate redis;
+    @Autowired private IngestProperties ingestProps;
 
     @BeforeEach
     void clean() {
@@ -121,6 +126,34 @@ class StreamIngestIntegrationTest extends IntegrationTestBase {
                         () ->
                                 assertThat(meters.get("locus.push.sent").counter().count())
                                         .isGreaterThan(before));
+    }
+
+    @Test
+    void poison_엔트리는_드롭되고_워커는_살아_계속_적재한다() throws Exception {
+        // 스트림에 처리 불가 엔트리를 직접 XADD — 옛 코드는 재시작 pending 회수에서 이걸로 storage 워커를 죽였다.
+        String stream = ingestProps.getStreamKey();
+        // (1) payload 필드 자체가 없음 = 트림된 유령 pending 재현(원래 크래시 원인).
+        redis.opsForStream()
+                .add(StreamRecords.newRecord().in(stream).ofMap(Map.of("garbage", "no-payload")));
+        // (2) payload는 있으나 손상 JSON.
+        redis.opsForStream()
+                .add(
+                        StreamRecords.newRecord()
+                                .in(stream)
+                                .ofMap(Map.of(StreamIngestWriter.PAYLOAD_FIELD, "{ not json")));
+
+        double poisonBefore = meters.get("locus.ingest.poison").counter().count();
+
+        // 정상 엔트리 — 워커가 살아있어야 이게 적재된다(워커가 죽었으면 영원히 0건).
+        postTelemetry("after-poison", Instant.now().minusSeconds(5).toString());
+
+        await().atMost(Duration.ofSeconds(15))
+                .untilAsserted(
+                        () -> {
+                            assertThat(telemetryRepository.count()).isEqualTo(1L);
+                            assertThat(meters.get("locus.ingest.poison").counter().count())
+                                    .isGreaterThanOrEqualTo(poisonBefore + 2);
+                        });
     }
 
     private Device deviceWithOrg(String deviceId, String orgId) {

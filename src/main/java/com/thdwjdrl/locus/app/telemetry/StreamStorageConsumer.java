@@ -46,6 +46,7 @@ public class StreamStorageConsumer implements SmartLifecycle {
     private final Timer flushTimer;
     private final Counter inserted;
     private final Counter flushErrors;
+    private final Counter poisonDropped;
 
     private volatile boolean running = false;
     private final List<Thread> workers = new ArrayList<>();
@@ -69,6 +70,10 @@ public class StreamStorageConsumer implements SmartLifecycle {
         this.flushErrors =
                 Counter.builder("locus.ingest.flush.errors")
                         .description("배치 적재 실패 횟수")
+                        .register(meters);
+        this.poisonDropped =
+                Counter.builder("locus.ingest.poison")
+                        .description("역직렬화 불가로 드롭한 스트림 엔트리 수(트림된 유령·손상 payload)")
                         .register(meters);
     }
 
@@ -153,14 +158,30 @@ public class StreamStorageConsumer implements SmartLifecycle {
 
     private void flush(List<MapRecord<String, Object, Object>> records) {
         List<Telemetry> batch = new ArrayList<>(records.size());
+        List<RecordId> goodIds = new ArrayList<>(records.size());
+        List<RecordId> poisonIds = new ArrayList<>();
         for (MapRecord<String, Object, Object> rec : records) {
-            String data = (String) rec.getValue().get(StreamIngestWriter.PAYLOAD_FIELD);
-            batch.add(read(data));
+            Telemetry t = tryRead(rec);
+            if (t == null) {
+                poisonIds.add(rec.getId()); // 역직렬화 불가(트림된 유령·손상 payload) → 드롭 대상
+            } else {
+                batch.add(t);
+                goodIds.add(rec.getId());
+            }
+        }
+        if (!poisonIds.isEmpty()) {
+            // 처리 불가 엔트리는 XACK로 버린다 — 안 버리면 pending에 남아 재시작마다 무한 재처리(워커 정지 원인).
+            acknowledge(poisonIds);
+            poisonDropped.increment(poisonIds.size());
+            log.warn("스트림 poison {}건 드롭(역직렬화 불가 — 트림된 유령·손상 payload)", poisonIds.size());
+        }
+        if (batch.isEmpty()) {
+            return;
         }
         try {
             flushTimer.record(() -> dao.persistBatch(batch));
             inserted.increment(batch.size());
-            ack(records); // 적재 성공 후에만 XACK
+            acknowledge(goodIds); // 적재 성공 후에만 XACK
         } catch (RuntimeException e) {
             // 적재 실패 → XACK 안 함 → pending 유지 → 재처리(at-least-once). 워커는 안 죽인다.
             flushErrors.increment();
@@ -168,16 +189,24 @@ public class StreamStorageConsumer implements SmartLifecycle {
         }
     }
 
-    private void ack(List<MapRecord<String, Object, Object>> records) {
-        RecordId[] ids = records.stream().map(MapRecord::getId).toArray(RecordId[]::new);
-        redis.opsForStream().acknowledge(props.getStreamKey(), GROUP, ids);
+    private void acknowledge(List<RecordId> ids) {
+        redis.opsForStream().acknowledge(props.getStreamKey(), GROUP, ids.toArray(new RecordId[0]));
     }
 
-    private Telemetry read(String jsonPayload) {
+    /**
+     * payload 역직렬화. 실패(payload null=트림된 유령, 손상 JSON)면 {@code null} 반환 — 호출부가 드롭한다. 던지지 않아 워커가 안
+     * 죽는다.
+     */
+    private Telemetry tryRead(MapRecord<String, Object, Object> rec) {
+        Object data = rec.getValue().get(StreamIngestWriter.PAYLOAD_FIELD);
+        if (data == null) {
+            return null;
+        }
         try {
-            return json.readValue(jsonPayload, TelemetryResponse.class).toTelemetry();
+            return json.readValue(data.toString(), TelemetryResponse.class).toTelemetry();
         } catch (Exception e) {
-            throw new IllegalStateException("스트림 페이로드 역직렬화 실패", e);
+            log.warn("스트림 payload 역직렬화 실패(id={}): {}", rec.getId(), e.toString());
+            return null;
         }
     }
 
