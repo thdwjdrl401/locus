@@ -360,6 +360,69 @@ body.light .leaflet-tile-pane {
   filter: grayscale(1);
 }
 
+/* 지오펜스 이벤트 피드 (M5) */
+#events-panel {
+  border-top: 1px solid var(--border);
+  flex: none;
+}
+#events {
+  max-height: 150px;
+  overflow-y: auto;
+}
+#events .ev {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+#events .ev-dev {
+  flex: none;
+}
+#events .ev-zone {
+  color: var(--muted);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#events .ev-t {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+#events .ev-empty {
+  color: var(--muted);
+  padding: 8px 12px;
+}
+/* 지오펜스 존 라벨 (Leaflet permanent tooltip) */
+.leaflet-tooltip.zone-label {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  text-shadow: 0 0 3px var(--map-bg), 0 0 3px var(--map-bg);
+}
+.leaflet-tooltip.zone-label::before {
+  display: none;
+}
+/* 이벤트 시 마커 플래시 */
+.leaflet-marker-icon.flash {
+  animation: mk-flash 1.2s ease-out;
+}
+@keyframes mk-flash {
+  0% {
+    filter: drop-shadow(0 0 1px var(--accent));
+  }
+  25% {
+    filter: drop-shadow(0 0 9px var(--accent)) drop-shadow(0 0 9px var(--accent));
+  }
+  100% {
+    filter: none;
+  }
+}
+
 /* 좁은 화면: 사이드바·패널을 오버레이로 */
 @media (max-width: 900px) {
   body {

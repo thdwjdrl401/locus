@@ -23,7 +23,8 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "locus.ingest.mode", havingValue = "stream")
 public class StreamIngestWriter implements TelemetryIngestPort {
 
-    static final String PAYLOAD_FIELD = "data";
+    /** 스트림 엔트리에서 JSON 페이로드가 담기는 필드명(스트림 소비자들의 와이어 계약). */
+    public static final String PAYLOAD_FIELD = "data";
 
     private final StringRedisTemplate redis;
     private final ObjectMapper json;

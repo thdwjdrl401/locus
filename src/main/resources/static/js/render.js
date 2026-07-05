@@ -256,6 +256,15 @@
         m._dead = dead;
         applyClasses(m);
       },
+      flash(id) {
+        const m = markers.get(id);
+        const el = m && m.getElement && m.getElement();
+        if (!el) return;
+        el.classList.remove("flash");
+        void el.offsetWidth; // 재시작을 위한 리플로우
+        el.classList.add("flash");
+        setTimeout(() => el.classList.remove("flash"), 1200);
+      },
     };
   };
 
@@ -391,5 +400,56 @@
     el.innerHTML = cfg.legend
       .map((l) => `<div class="li"><span class="sw" style="background:var(--${l.cls})"></span>${l.label}</div>`)
       .join("");
+  };
+
+  // ── 지오펜스 (M5) — 존 원 그리기 · 이벤트 시 펄스 · 이벤트 피드 ──
+  const ZONE_COLOR = "#4aa3ff";
+  Locus.drawZones = function (map, zones) {
+    const layers = new Map();
+    (zones || []).forEach((z) => {
+      const c = L.circle([z.centerLat, z.centerLng], {
+        radius: z.radiusMeters,
+        color: ZONE_COLOR,
+        weight: 2,
+        dashArray: "5,5",
+        fillColor: ZONE_COLOR,
+        fillOpacity: 0.08,
+      }).addTo(map);
+      c.bindTooltip(z.name, { permanent: true, direction: "center", className: "zone-label" });
+      layers.set(z.id, c);
+    });
+    return layers;
+  };
+
+  Locus.pulseZone = function (circle, type) {
+    if (!circle) return;
+    const col = type === "EXIT" ? "#e0902f" : "#2ec26a";
+    circle.setStyle({ color: col, fillColor: col, fillOpacity: 0.32, weight: 3 });
+    setTimeout(
+      () =>
+        circle.setStyle({
+          color: ZONE_COLOR,
+          fillColor: ZONE_COLOR,
+          fillOpacity: 0.08,
+          weight: 2,
+        }),
+      900
+    );
+  };
+
+  Locus.renderEvents = function (el, events) {
+    el.innerHTML =
+      events
+        .map((e) => {
+          const cls = e.type === "ENTER" ? "ok" : "warn";
+          const t = new Date(e.at).toLocaleTimeString();
+          return (
+            `<div class="ev"><span class="chip ${cls}">${e.type}</span>` +
+            `<span class="ev-dev">${e.deviceId}</span>` +
+            `<span class="ev-zone">${e.zoneName}</span>` +
+            `<span class="ev-t">${t}</span></div>`
+          );
+        })
+        .join("") || `<div class="ev-empty">지오펜스 이벤트 없음</div>`;
   };
 })();

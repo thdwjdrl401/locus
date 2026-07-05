@@ -43,6 +43,26 @@
   window.Locus.renderLegend(document.getElementById("legend"));
   window.Locus.clearDetail(detailEl);
 
+  // ── 지오펜스 (M5): 존 원 + 이벤트 피드 ──
+  const eventsEl = document.getElementById("events");
+  const geofenceEvents = [];
+  let zoneLayers = new Map();
+  window.Locus.renderEvents(eventsEl, geofenceEvents);
+
+  async function loadZones() {
+    const res = await fetch("/api/geofences?org=" + encodeURIComponent(ORG), { cache: "no-store" });
+    if (!res.ok) return;
+    zoneLayers = window.Locus.drawZones(map, await res.json());
+  }
+
+  function onGeofenceEvent(ev) {
+    geofenceEvents.unshift(ev);
+    if (geofenceEvents.length > 30) geofenceEvents.pop();
+    window.Locus.renderEvents(eventsEl, geofenceEvents);
+    window.Locus.pulseZone(zoneLayers.get(ev.geofenceId), ev.type);
+    renderer.flash(ev.deviceId);
+  }
+
   // ── 필터: 데이터가 아니라 가시성만 바꿈 ──────────────────────
   function visible(t) {
     if (!filterState.types.has(t.deviceType)) return false;
@@ -185,6 +205,7 @@
       reconnectDelay: 2000,
       onConnect: () => {
         client.subscribe("/topic/org/" + ORG, (msg) => upsert(JSON.parse(msg.body)));
+        client.subscribe("/topic/org/" + ORG + "/geofence", (msg) => onGeofenceEvent(JSON.parse(msg.body)));
         setConn(true, "실시간 연결됨 · " + new Date().toLocaleTimeString());
       },
       onStompError: (f) => setConn(false, "STOMP 오류: " + f.headers["message"]),
@@ -193,6 +214,7 @@
     client.activate();
   }
 
+  loadZones().catch(() => {});
   updateHud();
   snapshot()
     .catch((e) => setConn(false, "스냅샷 실패: " + e.message + " (push 대기)"))

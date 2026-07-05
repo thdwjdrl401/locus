@@ -6,7 +6,7 @@
 
 ---
 
-## 현재 포커스 — M3 추상화 검증 완료 (디바이스 타입)
+## 현재 포커스 — M5 지오펜스 판정 엔진 (슬라이스1, 브라우저 검증 대기)
 
 | | |
 |---|---|
@@ -56,6 +56,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 | 2026-07-03 | **결정 문서 전면 재검토** — ADR 0008 재작성(M1이 확정한 것 → 전환 검증(효과 실측) → 검증하지 않은 대안(PK 재설계+파티셔닝·MyRocks) → 선택 근거(워크로드 정렬·운영 자동화). 저장소 교체가 측정에서 필수로 따라 나온 것이 아님을 명시, PK 실험을 미해결로). 0007 갱신(MAXLEN 사이징=M4b 실측 반영, 폰 "구조로 해결"→장기 아카이브 한정). 0001~0004 서술 정확화. 보류표 시점 재설정(FK→필요 시, 인증→가칭 M4c 또는 M6) + STRUCTURE·conventions·보드 낡음 갱신 + 문서 전수 표현 정리 | ADR 0001~0008, ROADMAP, STRUCTURE, conventions, CLAUDE §2.1, PERFORMANCE, measurements |
 | 2026-07-03 | **문서 표현 규칙 확장** — 의인화("측정이 말한다")·콜론 뒤 선언 수사·자기 평가 라벨("(정직 기록)")·관념어/평가어("필연·승리") 금지, 두괄식, 라벨에 해석 금지를 §7에 추가 | [conventions.md §7](conventions.md) |
 | 2026-07-05 | **stream poison 내성(storage+monitoring)** — payload null(트림된 유령 pending)·손상 JSON이 storage(재시작 pending 회수에서 워커 사망)·monitoring(배치 중단→정상 메시지 starvation) 둘 다 망가뜨리던 버그. 처리 불가 엔트리는 드롭(XACK)+카운트, 좋은 엔트리만 처리 후 XACK. 시뮬레이터 stale 스트림으로 재현, CI가 monitoring 방치 회귀를 잡음(1차 커밋 push 테스트 실패) | `StreamStorageConsumer`, `StreamMonitoringConsumer`, `StreamIngestIntegrationTest` |
+| 2026-07-05 | **M5 지오펜스 슬라이스1** — 판정 축(`core.engine`) 도입. 판정 기하·상태전이는 core 순수(`ReachEvaluator`/`RadiusEvaluator`/`ReachTransition`, 미션·타입·저장 위치 모름), 배선은 `app.geofence`(3번째 CG `geofence`·상태 포트·시드 catalog·WebSocket push·조회). **지오펜스는 슬라이스1에서 DB 없이 config→인메모리**(Flyway 회피). 시드 존은 측정 오염 피해 시뮬 프로파일에만. M9 미션 도달이 같은 엔진 재사용 | `core.{strategy,engine,domain}`, `app.geofence.*`, [specs/M5-geofence.md](specs/M5-geofence.md) |
 | 2026-07-03 | **MQTT 토픽 구조 = `telemetry/{deviceId}`**(identity는 토픽에, 구독 `telemetry/+`). 근거: 브로커 ACL·per-device last-will·스푸핑 방지는 토픽 identity가 전제(Azure IoT Hub 구조 강제·mosquitto ACL pattern으로 확인), 토픽은 디바이스 계약이라 클라이언트가 시뮬레이터뿐인 지금이 변경 비용 최소. 페이로드 deviceId 생략 가능·불일치 drop. 계기=emqtt-bench 페이로드 템플릿 제약(도구 독립 근거 확인 후 결정). **부하 도구=emqtt-bench(공식, Docker)** — xk6-mqtt는 README가 POC·미지원 명시라 기각, 자작 퍼블리셔는 폴백 | [ADR 0007 §MQTT](decisions/0007-messaging-storage-redis-streams-and-governance.md), `MqttTelemetryHandler` |
 | 2026-07-02 | **M-MQTT 클라이언트 = Eclipse Paho v3 직접 + `MqttSubscriber` 이음새(ADR 0004)**. 단순 구독→적재라 Spring Integration은 과추상(라우팅 파이프라인 계획 없음). 고처리량에서 리액티브·MQTT5·backpressure 필요 시 **HiveMQ 구현체 추가**로 전환(재작성 아님, 측정 게이트). 불안정 네트워크(재접속·QoS·last-will) 직접 통제 | `app.telemetry`(`MqttSubscriber`/`PahoMqttSubscriber`), [ADR 0007 §MQTT](decisions/0007-messaging-storage-redis-streams-and-governance.md) |
 | 2026-07-04 | **M-MQTT 천장 = 스토리지 아니라 전송 경로 ~10K**. 부하 20K로 재니 HTTP·MQTT 둘 다 ~10K서 막힘, 스토리지@workers4는 디스크 60~68%(외삽 ~15K 여유). HTTP=k6(Colima) 한계, MQTT ~9.8K=**mosquitto 단일 스레드**. 판별(conn4·conn8 × offer 10K·20K): offer 20K서만 붕괴(연결 무관)=브로커 혼잡 붕괴("앱 과병렬" 가설 반증). MQTT 10K 초과=브로커 스케일(EMQX/HiveMQ, ADR 0004). 측정위생: capacity는 판마다 `down -v`(TRUNCATE만이면 세션 퇴행 ~6K 실측) | [M-MQTT.md §천장](measurements/M-MQTT.md) |
@@ -78,7 +79,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 | **M4** | **실시간: 읽기경로 + Streams fan-out** | ✅ 코어 — M4a(읽기 ~250×)·M4b(지속 10k 무손실·재시작 at-least-once). 잔여: M4b-A(push 측정·관제 화면 스케일링)·인증(가칭 M4c) | WebSocket | Redis |
 | **M-MQTT** | **MQTT 수집 경로** | ✅ 수집+측정+개선 완결. 인입 병렬화(스레드+연결)로 3.25K→~9K(2.8배)·HTTP 천장 근접, 인입 병목 제거 | MQTT | Mosquitto |
 | **M3** | 추상화 검증(디바이스 타입) | ✅ 봉투 일반화 + AMR 추가로 core diff=enum 1줄+게이트 훅뿐 실증(engine·엔티티 불변). 폰 프라이버시 게이트 불변 | 양축 추상화 | — |
-| **M5** | 도달/이탈 판정(geofence) | ⬜ | — | (Redis Stream CG) |
+| **M5** | 도달/이탈 판정(geofence) | 🔄 슬라이스1(엔진+CG+가시화, 브라우저 검증 대기) | — | (Redis Stream CG) |
 | **M6** | 민감정보 보호·보존 | ⬜ | — | (TimescaleDB retention) |
 | **M7** | 대용량 조회·복제 | ⬜ | — | (TimescaleDB 하이퍼테이블) |
 | **M8** | 컨테이너·**k8s** | ⬜ | k8s | (앱 컨테이너화) |
@@ -173,9 +174,13 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 - [ ] 인증/식별 (`app.auth`/`app.user`, 공통 Principal, Device≠User — [보류 결정](ROADMAP.md))
 - [ ] 디바이스 그루핑 권한 강제 (관리자↔조직 M:N, `GET /api/devices` 스코프 필터) ← 조직 데이터모델(`orgId`)은 M4a에서
 
-## M5 — 도달/이탈 판정 엔진 (geofence)  ⬜  보조
-- [ ] `core.engine` 판정(미션·타입 모름) + `GeofenceStateStore`
-- [ ] 텔레메트리 Stream의 `geofence` Consumer Group으로 판정 엔진 fan-out ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md))
+## M5 — 도달/이탈 판정 엔진 (geofence)  🔄  보조
+슬라이스1(얇게+가시화, 2026-07-05, 브라우저 검증 대기) — 계획 `plans/dapper-questing-gray.md`, 스펙 [specs/M5-geofence.md](specs/M5-geofence.md).
+- [x] **`core.engine` 판정(미션·타입 모름)** — `ReachEvaluator`(core.strategy 인터페이스, 지오펜스·미션 도달 공유) + `RadiusEvaluator`(haversine, `Math`만) + `ReachTransition`(core.domain, 순수 상태기계 ENTER/EXIT). ArchUnit green(core 격리 유지). 단위테스트 동반.
+- [x] **`geofence` Consumer Group** ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)) — `StreamGeofenceConsumer`(monitoring mirror·단일 워커·poison 내성, `$`부터). storage·monitoring 옆 3번째 소비자. `location==null`이면 스킵(§3.5). 통합테스트(zone 안팎→ENTER/EXIT 카운터).
+- [x] **상태 포트 + 시드 catalog** — `GeofenceStateStore`(ADR 0004) 인메모리 구현. 지오펜스는 DB 없이 config(`locus.geofence.seeded`)→`GeofenceCatalog`(org별). CRUD/영속은 이후.
+- [x] **가시화** — `GeofenceEventPublisher`가 `/topic/org/{org}/geofence`로 push, `GET /api/geofences` 조회. 관제 화면이 존 원 그리기 + 이벤트 피드 + 존/마커 펄스. 시드 존은 AMR 순찰 사이트에 배치해 크로싱 발생.
+- [ ] **(이후 슬라이스)** CRUD API·DB 영속(Flyway)·폴리곤(ReachEvaluator 2번째 구현)·`GeofenceStateStore` Redis 구현·**판정 처리량 측정**(geofence CG 10k lag 유계 — monitoring lag 측정과 같은 방법).
 
 ## M6 — 민감정보 보호 · 보존  ⬜  보조
 - [ ] 위치 암호화 컬럼 · 로그/덤프 평문 차단

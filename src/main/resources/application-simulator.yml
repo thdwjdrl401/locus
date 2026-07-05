@@ -10,3 +10,25 @@ locus:
     interval-ms: 1000
     # 텔레메트리 전송 대상 (자기 자신 또는 별도 서버 인스턴스)
     target-base-url: http://localhost:8093
+  # 데모용 시드 지오펜스(M5). 측정 기본 설정을 안 건드리려고 시뮬 프로파일에만 둔다.
+  # 좌표는 AmrProfile 사이트(37.5665/126.9780)·폰 분산 영역에 맞춰 실제 크로싱이 나게 배치.
+  geofence:
+    seeded:
+      - id: charger
+        org: org-0
+        name: "AMR 충전소"
+        center-lat: 37.5665
+        center-lng: 126.9780
+        radius-meters: 5
+      - id: bay-a
+        org: org-0
+        name: "적재 구역 A"
+        center-lat: 37.56658983
+        center-lng: 126.9781133
+        radius-meters: 4
+      - id: phone-zone
+        org: org-0
+        name: "관제 구역(폰)"
+        center-lat: 37.505
+        center-lng: 127.005
+        radius-meters: 500
