@@ -11,21 +11,16 @@ locus:
     # 텔레메트리 전송 대상 (자기 자신 또는 별도 서버 인스턴스)
     target-base-url: http://localhost:8093
   # 데모용 시드 지오펜스(M5). 측정 기본 설정을 안 건드리려고 시뮬 프로파일에만 둔다.
-  # 좌표는 AmrProfile 사이트(37.5665/126.9780)·폰 분산 영역에 맞춰 실제 크로싱이 나게 배치.
+  # 로봇 존은 순찰 사각(odom 0~10m) 한가운데(5,5)에 반경 6m — 변 중앙은 안·코너는 밖이라
+  # AMR가 각 변에서 경계를 넘나들며 루프당 ENTER/EXIT를 여러 번 낸다(37.5665/126.9780 사이트 기준).
   geofence:
     seeded:
-      - id: charger
+      - id: robot-work-area
         org: org-0
-        name: "AMR 충전소"
-        center-lat: 37.5665
-        center-lng: 126.9780
-        radius-meters: 5
-      - id: bay-a
-        org: org-0
-        name: "적재 구역 A"
-        center-lat: 37.56658983
-        center-lng: 126.9781133
-        radius-meters: 4
+        name: "로봇 작업구역"
+        center-lat: 37.56654492
+        center-lng: 126.97805667
+        radius-meters: 6
       - id: phone-zone
         org: org-0
         name: "관제 구역(폰)"
