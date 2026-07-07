@@ -17,17 +17,22 @@ import org.springframework.stereotype.Component;
 @Component
 public class AmrProfile implements MovementProfile {
 
-    /** 순찰 경로(맵 기준 m). 원점(0,0)이 충전소. */
-    private static final double[][] WAYPOINTS = {{10, 0}, {10, 10}, {0, 10}, {0, 0}};
+    /** 순찰 사각의 한 변 길이(m). 데모 가시성 위주로 크게 잡는다 — 지도 줌에서 경로·존이 점이 아니라 형태로 보이게. */
+    private static final double SIDE_M = 200.0;
+
+    /** 순찰 경로(맵 기준 m). 원점(0,0)이 충전소. 한 변 {@link #SIDE_M}인 정사각 루프. */
+    private static final double[][] WAYPOINTS = {
+        {SIDE_M, 0}, {SIDE_M, SIDE_M}, {0, SIDE_M}, {0, 0}
+    };
 
     private static final double CHARGER_X = 0;
     private static final double CHARGER_Y = 0;
 
-    /** 프레임당 이동 거리(m). */
-    private static final double STEP_M = 0.5;
+    /** 프레임당 이동 거리(m). 변 길이에 비례(변당 20프레임)해 확대해도 루프 주기·프레임간 가시 이동량을 유지한다. */
+    private static final double STEP_M = SIDE_M / 20.0;
 
-    /** 목표 도달 판정 임계(m). */
-    private static final double REACH_M = 0.5;
+    /** 목표 도달 판정 임계(m). 스텝과 동일 스케일. */
+    private static final double REACH_M = STEP_M;
 
     private static final int LOW_BATTERY = 20;
     private static final double METERS_PER_DEG_LAT = 111_320.0;
@@ -38,7 +43,7 @@ public class AmrProfile implements MovementProfile {
     private static final double SITE_LNG = 126.9780;
 
     /** 순찰 루프 둘레(m) = 사각 네 변의 합. */
-    private static final double LOOP_M = 40.0;
+    private static final double LOOP_M = 4 * SIDE_M;
 
     @Override
     public DeviceType deviceType() {
@@ -59,29 +64,29 @@ public class AmrProfile implements MovementProfile {
     }
 
     /**
-     * 순찰 루프((0,0)→(10,0)→(10,10)→(0,10)→(0,0)) 위 호길이 {@code d}(m) 지점에 odom·헤딩·다음 웨이포인트를 놓는다. 이동
-     * 방향으로 헤딩을 맞춰 첫 프레임부터 자연스럽게 잇는다.
+     * 순찰 루프((0,0)→(SIDE,0)→(SIDE,SIDE)→(0,SIDE)→(0,0)) 위 호길이 {@code d}(m) 지점에 odom·헤딩·다음 웨이포인트를
+     * 놓는다. 이동 방향으로 헤딩을 맞춰 첫 프레임부터 자연스럽게 잇는다.
      */
     private static void placeOnLoop(SimState s, double d) {
-        double side = 10.0;
-        if (d < side) { // (0,0) → (10,0)
+        double side = SIDE_M;
+        if (d < side) { // (0,0) → (SIDE,0)
             s.odomX = d;
             s.odomY = 0;
             s.odomTheta = 0;
             s.waypointIndex = 0;
-        } else if (d < 2 * side) { // (10,0) → (10,10)
-            s.odomX = 10;
+        } else if (d < 2 * side) { // (SIDE,0) → (SIDE,SIDE)
+            s.odomX = side;
             s.odomY = d - side;
             s.odomTheta = Math.PI / 2;
             s.waypointIndex = 1;
-        } else if (d < 3 * side) { // (10,10) → (0,10)
-            s.odomX = 10 - (d - 2 * side);
-            s.odomY = 10;
+        } else if (d < 3 * side) { // (SIDE,SIDE) → (0,SIDE)
+            s.odomX = side - (d - 2 * side);
+            s.odomY = side;
             s.odomTheta = Math.PI;
             s.waypointIndex = 2;
-        } else { // (0,10) → (0,0)
+        } else { // (0,SIDE) → (0,0)
             s.odomX = 0;
-            s.odomY = 10 - (d - 3 * side);
+            s.odomY = side - (d - 3 * side);
             s.odomTheta = -Math.PI / 2;
             s.waypointIndex = 3;
         }

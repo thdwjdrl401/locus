@@ -179,7 +179,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 - [x] **`core.engine` 판정(미션·타입 모름)** — `ReachEvaluator`(core.strategy 인터페이스, 지오펜스·미션 도달 공유) + `RadiusEvaluator`(haversine, `Math`만) + `ReachTransition`(core.domain, 순수 상태기계 ENTER/EXIT). ArchUnit green(core 격리 유지). 단위테스트 동반.
 - [x] **`geofence` Consumer Group** ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)) — `StreamGeofenceConsumer`(monitoring mirror·단일 워커·poison 내성, `$`부터). storage·monitoring 옆 3번째 소비자. `location==null`이면 스킵(§3.5). **시드 지오펜스 0이면 미가동**(불필요 소비·contention 방지 — no-zone 컨텍스트에서 poison 통합테스트 흔들던 것 수정). 통합테스트(zone 안팎→ENTER/EXIT 카운터).
 - [x] **상태 포트 + 시드 catalog** — `GeofenceStateStore`(ADR 0004) 인메모리 구현. 지오펜스는 DB 없이 config(`locus.geofence.seeded`)→`GeofenceCatalog`(org별). CRUD/영속은 이후.
-- [x] **가시화** — `GeofenceEventPublisher`가 `/topic/org/{org}/geofence`로 push, `GET /api/geofences` 조회. 관제 화면이 존 원 그리기 + 이벤트 피드 + 존/마커 펄스. 시드 존은 AMR 순찰 사이트에 배치해 크로싱 발생.
+- [x] **가시화** — `GeofenceEventPublisher`가 `/topic/org/{org}/geofence`로 push, `GET /api/geofences` 조회. 관제 화면이 존 원 그리기 + 이벤트 피드 + 존/마커 펄스. 시드 존은 AMR 순찰 사이트에 배치해 크로싱 발생. **데모 가시성 확대(2026-07-07)**: 순찰 루프 10m→200m·존 반경 6m→120m로 20배 닮음 확대(`AmrProfile.SIDE_M` 단일 노브 + 시뮬 config). 변 중앙=안·코너=밖 기하 불변식 보존→루프당 ENTER/EXIT 다발 유지. 순수 스케일이라 단위·검증 green 불변.
 - [ ] **(이후 슬라이스)** CRUD API·DB 영속(Flyway)·폴리곤(ReachEvaluator 2번째 구현)·`GeofenceStateStore` Redis 구현·**판정 처리량 측정**(geofence CG 10k lag 유계 — monitoring lag 측정과 같은 방법).
 
 ## M6 — 민감정보 보호 · 보존  ⬜  보조
