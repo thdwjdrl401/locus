@@ -31,10 +31,13 @@ echo "실행: ${JAR}"
 
 # Locus를 박스의 ≈3/4로 격리: CPU는 core 0–5에 핀(docker TimescaleDB의 cpuset와 동일 경계),
 # 메모리는 -Xmx1500m로 바운드 → 시스템+OS에 1/4(코어 6–7, ~2G) 예약.
+# 핀 범위는 LOCUS_CPU_PINS로 조절 — 기본 0-5(격리 baseline). 전체 코어=0-7, 끄기=none.
+#   ⚠ 측정 baseline은 0-5 고정(M0/M4b 등과 비교 가능). 0-7 등은 별도 라벨 실험/데모용이지 baseline 아님.
 # taskset 없으면(다른 OS) 어피니티 없이 그대로 실행.
+CPU_PINS="${LOCUS_CPU_PINS:-0-5}"
 PIN=()
-if command -v taskset >/dev/null 2>&1; then
-  PIN=(taskset -c 0-5)
+if [ "${CPU_PINS}" != "none" ] && command -v taskset >/dev/null 2>&1; then
+  PIN=(taskset -c "${CPU_PINS}")
 fi
 
 exec "${PIN[@]}" java \
