@@ -117,6 +117,23 @@ io.lettuce.core.RedisCommandExecutionException:
 - **폭주 정책 확정**: 현재 blind `MAXLEN`(내구 경로는 사이징으로 무손실). `XTRIM MINID` 도입은 메모리 무한 리스크와 함께 별도 결정.
 - **monitoring 그룹**: best-effort라 고rate에서 lag이 쌓였다 부하 후 회복. push 지연·유실 허용치는 M4b(A) push 측정에서.
 
+## 후속 (2026-07-09) — 워커 스윕 연장: 8워커로 12K 무손실
+
+M4b 본문은 워커 4에서 10K SLO 무손실을 확인하고 멈췄다(SLO 달성, 더 안 밈). 이후 SLO 위 여유를 밀어봤다: **8코어(`LOCUS_CPU_PINS=0-7`, baseline 0-5 아님)·stream·`device-upsert=true`, k6 인입 ~12K req/s, 워커만 4→8.**
+
+| 워커 | inserted(적재) | disk %util | disk 큐깊이 | CPU | flush 지연 | storage lag | 판정 |
+|---|---|---|---|---|---|---|---|
+| 4 | ~9.5–10K | ~77% | ~2 | ~78% | ~190ms | — | 인입 12K에 못 따라감(갭 ~2K/s → 스트림 버퍼) |
+| **8** | **~11–12K (인입과 매칭)** | ~86% | ~3.5 | 82–98% | ~130–220ms | **0** | **12K 무손실** |
+
+- **워커 4→8이 적재를 10K→12K로.** `XINFO GROUPS`에서 storage(내구) `lag 0·pending 0` = 전량 소비·DB 적재·ACK 완료, 트림 유실 0. (monitoring 그룹만 pending 200 = best-effort in-flight, 정상.)
+- **개별 flush는 여전히 ~180ms**(HDD fsync 그대로)지만 8워커 병렬로 aggregate가 오름. 병렬화가 디스크 빈 사이클을 채움(util 77→86%, 큐 2→3.5) — 본문 "한계 2"의 sublinear 워커 효과 연장.
+- 12K에서 **CPU 82–98% + 디스크 큐 3.5** 동시 근접 = 다음 벽은 코어(CPU)+SSD(flush 지연). 하드웨어 블록.
+
+**이번 세션 오진 정정(측정 위생 기록):** 진단 중 "10K가 디스크 대역폭 벽"이라 했으나 틀렸다. disk %util 77%(포화 아님)에서 막힌 건 **워커4의 병렬화 부족**이었고 8워커로 12K까지 올랐다. **`%util`로 saturation을 판단한 게 오류** — 실제 신호는 flush 지연(20→190ms)·큐깊이(0→3.5)였다. (M4b 본문의 "workers4=10K SLO 무손실"은 유효; 이건 SLO 위 특성화.)
+
+주의(비교 범위): 이 12K는 8코어(0-7)·fleet 부하(`telemetry-fleet.js`, VU=디바이스)라 본문 10K(workers4·capacity 모델·코어0-5)와 apples-to-apples 아님. 깨끗한 단일변수 비교는 **세션 내 동일 8코어에서 워커 4→8(10K→12K)**.
+
 ## 측정 환경·지표
 | 항목 | 값 |
 |---|---|
