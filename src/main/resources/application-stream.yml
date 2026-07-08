@@ -1,0 +1,14 @@
+# 프로덕션 인입 프로파일 — M4b가 확정한 stream 적재 설정 (증명된 값만).
+#   활성화:  SPRING_PROFILES_ACTIVE=stream  (예: SPRING_PROFILES_ACTIVE=stream scripts/run-app.sh)
+#   근거:    Redis Streams fan-out으로 지속 10k 무손실(워커4·MAXLEN400K). ADR 0007 · measurements/M4b.md.
+#
+# 왜 base 기본(application.yml)을 안 바꾸나:
+#   base는 direct 유지 — Redis 없이 standalone 실행·테스트가 떠야 하기 때문(단순하게 먼저, CLAUDE §3.2/§3.4).
+#   stream은 Redis 상시 의존이라 명시 활성(이 프로파일)일 때만 켠다. 프로덕션 배포가 이 프로파일을 활성화.
+#
+# 여기 안 적은 값은 base application.yml에서 상속: stream-maxlen(400K)·device-upsert(true)·batch/delay 등.
+# INGEST_MODE / INGEST_WORKERS env로 이 프로파일 값도 계속 오버라이드 가능.
+locus:
+  ingest:
+    mode: ${INGEST_MODE:stream}
+    workers: ${INGEST_WORKERS:4}
