@@ -53,7 +53,7 @@
 
 ## R5 — 잔가지
 
-- **R5a device UPSERT 핫패스 결합 (수용).** 매 배치가 device 갱신(죽은 튜플→autovacuum)을 텔레메트리 쓰기 경로에 얹는다. `fillfactor=70`·HOT로 튜닝됨. `INGEST_DEVICE_UPSERT=false`로 격리 가능하나 on-path 비용은 미분해 — 필요 시 A/B로 측정.
+- **R5a device UPSERT 핫패스 결합 (수용).** 매 배치가 device 갱신(죽은 튜플→autovacuum)을 텔레메트리 쓰기 경로에 얹는다. `fillfactor=70`·HOT로 튜닝됨. **on-path perf 비용은 사실상 무시 가능**으로 귀결(2026-07-09): 배치 운영점이 CPU 바운드([M-http-capacity](measurements/M-http-capacity.md) — device upsert **켠 채** 12–16K 도달·디스크 68% 여유)라 UPSERT를 빼도 처리량은 안 오른다(별도 A/B 불필요). **남은 개선 유인은 성능이 아니라 구조**: registry↔live-state 분리 + M4 스펙 "status=파생" 이행 + status ONLINE-only 버그. insert-if-absent 강등(`DO NOTHING`)을 준비(코드·테스트 green·미커밋)했으나 `perf:` 아닌 `refactor:`/M4c로 재프레임([STATUS](STATUS.md) 현재 포커스).
 - **R5b monitoring PEL 상한 없음 (관찰).** best-effort라 ACK를 안 하면 pending(PEL)이 누적(메모리). 현재 ~200으로 작음. 지속 증가하면 상한/주기적 XACK 필요.
 - **R5c JSON 파싱 인입 CPU (수용).** Jackson 역직렬화 + 검증이 인입 CPU의 지배분(≈0.3ms/req, [M-http-capacity](measurements/M-http-capacity.md)). 바이너리 프로토콜은 디바이스 계약 변경이라 별개 결정.
 
