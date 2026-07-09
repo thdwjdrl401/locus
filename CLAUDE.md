@@ -90,6 +90,7 @@
 | 트리 ↔ 결정 매핑 | `docs/STRUCTURE.md` |
 | 마일스톤 ↔ 위치 + 보류 결정 | `docs/ROADMAP.md` |
 | 측정 양식·기록 | `docs/measurements/` |
+| 아키텍처 리스크(열린 위험) | `docs/RISKS.md` |
 | 브랜치·커밋·태그·측정 컨벤션 | `docs/conventions.md` |
 | 보안 정책 | `SECURITY.md` |
 | 경계 강제 테스트 | `src/test/.../architecture/CoreIsolationTest.java` |
