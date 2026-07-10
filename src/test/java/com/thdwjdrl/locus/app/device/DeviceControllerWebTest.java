@@ -9,7 +9,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.thdwjdrl.locus.app.support.PageResponse;
 import com.thdwjdrl.locus.core.domain.DeviceNotFoundException;
-import com.thdwjdrl.locus.core.domain.DeviceStatus;
 import com.thdwjdrl.locus.core.domain.DeviceType;
 import java.time.Instant;
 import java.util.List;
@@ -27,8 +26,7 @@ class DeviceControllerWebTest {
     @MockitoBean private DeviceQueryService queryService;
 
     private DeviceResponse sample() {
-        return new DeviceResponse(
-                "phone-1", DeviceType.PHONE, DeviceStatus.ONLINE, Instant.now(), Instant.now());
+        return new DeviceResponse("phone-1", DeviceType.PHONE, Instant.now());
     }
 
     @Test
