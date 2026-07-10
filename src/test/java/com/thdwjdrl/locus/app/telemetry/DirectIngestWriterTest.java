@@ -3,13 +3,13 @@ package com.thdwjdrl.locus.app.telemetry;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.thdwjdrl.locus.app.device.DeviceRepository;
 import com.thdwjdrl.locus.core.domain.Device;
-import com.thdwjdrl.locus.core.domain.DeviceStatus;
 import com.thdwjdrl.locus.core.domain.DeviceType;
 import com.thdwjdrl.locus.core.domain.Telemetry;
 import jakarta.persistence.EntityManager;
@@ -24,7 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-/** 단건 직접 적재(A0): Device upsert(생성/갱신) + Telemetry persist. */
+/** 단건 직접 적재(A0): Device insert-if-absent(신규만 생성) + Telemetry persist. */
 @ExtendWith(MockitoExtension.class)
 class DirectIngestWriterTest {
 
@@ -51,23 +51,20 @@ class DirectIngestWriterTest {
         ArgumentCaptor<Device> captor = ArgumentCaptor.forClass(Device.class);
         verify(deviceRepository).save(captor.capture());
         assertThat(captor.getValue().getFirstSeenAt()).isEqualTo(now);
-        assertThat(captor.getValue().getLastSeenAt()).isEqualTo(now);
-        assertThat(captor.getValue().getStatus()).isEqualTo(DeviceStatus.ONLINE);
         verify(entityManager).persist(any(Telemetry.class));
     }
 
     @Test
-    void 기존_디바이스면_갱신하고_텔레메트리를_저장한다() {
+    void 기존_디바이스면_갱신하지_않고_텔레메트리만_저장한다() {
         Device existing = new Device("phone-1", DeviceType.PHONE);
         existing.setFirstSeenAt(now.minusSeconds(3600));
         when(deviceRepository.findByDeviceId("phone-1")).thenReturn(Optional.of(existing));
 
         writer().submit(telemetry());
 
-        assertThat(existing.getLastSeenAt()).isEqualTo(now);
-        assertThat(existing.getFirstSeenAt()).isEqualTo(now.minusSeconds(3600)); // 유지
-        assertThat(existing.getStatus()).isEqualTo(DeviceStatus.ONLINE);
-        verify(deviceRepository).save(existing);
+        // insert-if-absent: 기존 device는 읽기만 — save 없음(라이브 상태 갱신 제거).
+        verify(deviceRepository, never()).save(any(Device.class));
+        assertThat(existing.getFirstSeenAt()).isEqualTo(now.minusSeconds(3600)); // 불변
         verify(entityManager).persist(any(Telemetry.class));
     }
 

@@ -2,7 +2,6 @@ package com.thdwjdrl.locus.app.telemetry;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.thdwjdrl.locus.core.domain.DeviceStatus;
 import com.thdwjdrl.locus.core.domain.Location;
 import com.thdwjdrl.locus.core.domain.Telemetry;
 import java.sql.PreparedStatement;
@@ -27,8 +26,8 @@ import org.springframework.transaction.annotation.Transactional;
  * <ul>
  *   <li>telemetry: {@code ON CONFLICT (device_id, recorded_at) DO NOTHING} — 복합 PK 중복은 조용히 버린다(유실
  *       허용).
- *   <li>device: 배치 내 deviceId 중복 제거 후 {@code ON CONFLICT (device_id) DO UPDATE}로 last_seen/status
- *       갱신.
+ *   <li>device: 배치 내 deviceId 중복 제거 후 {@code ON CONFLICT (device_id) DO NOTHING}로 insert-if-absent
+ *       (레지스트리). 라이브 상태(last_seen·status)는 여기서 안 건드린다 — M4 최신상태 프로젝션이 소유.
  * </ul>
  *
  * <p>jsonb 파라미터: SQL 레벨 캐스팅({@code CAST(? AS jsonb)}, {@code ?::jsonb})은 JDBC PreparedStatement와
@@ -47,14 +46,11 @@ public class TelemetryBatchDao {
                     + "VALUES (?,?,?,?,?,?,?,?,?,?,?) "
                     + "ON CONFLICT (device_id, recorded_at) DO NOTHING";
 
-    // PostgreSQL EXCLUDED 행 별칭 — 삽입 시도값을 UPDATE SET에서 참조.
-    private static final String UPSERT_DEVICE =
-            "INSERT INTO device (device_id, device_type, status, first_seen_at, last_seen_at) "
-                    + "VALUES (?,?,?,?,?) "
-                    + "ON CONFLICT (device_id) DO UPDATE SET "
-                    + " last_seen_at = GREATEST(COALESCE(device.last_seen_at, EXCLUDED.last_seen_at),"
-                    + " EXCLUDED.last_seen_at), "
-                    + " status = EXCLUDED.status";
+    // insert-if-absent: 처음 본 device만 레지스트리에 넣는다. status→DB 기본('UNKNOWN'), last_seen→null.
+    private static final String REGISTER_DEVICE =
+            "INSERT INTO device (device_id, device_type, first_seen_at) "
+                    + "VALUES (?,?,?) "
+                    + "ON CONFLICT (device_id) DO NOTHING";
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
@@ -66,12 +62,12 @@ public class TelemetryBatchDao {
         this.props = props;
     }
 
-    /** 한 배치를 한 트랜잭션으로 적재(telemetry + 선택적 device upsert). */
+    /** 한 배치를 한 트랜잭션으로 적재(telemetry + 선택적 device 레지스트리 등록). */
     @Transactional
     public void persistBatch(List<Telemetry> batch) {
         insertTelemetry(batch);
         if (props.isDeviceUpsert()) {
-            upsertDevices(batch);
+            registerDevices(batch);
         }
     }
 
@@ -105,31 +101,27 @@ public class TelemetryBatchDao {
     }
 
     /**
-     * 배치 안에서 디바이스별 가장 최근 receivedAt만 남겨 upsert(중복 UPDATE 낭비 제거).
+     * 배치 안에서 device_id별 하나만 남겨 insert-if-absent(중복 INSERT 시도 축소).
      *
-     * <p>{@code TreeMap}으로 device_id 정렬 → 모든 워커가 device 행 락을 <b>같은 순서</b>로 잡는다 → 순환 대기 불가 = 데드락 0.
-     * (M2-par 다중 워커에서 device upsert가 서로 엇갈린 순서로 락을 잡아 `deadlock detected`로 배치가 버려지던 문제 수정.)
+     * <p>{@code DO NOTHING}이라 UPDATE 행 락을 잡지 않아 워커 간 device 데드락은 구조상 사라졌다(옛 {@code DO UPDATE}가 엇갈린
+     * 락 순서로 `deadlock detected`를 내던 문제도 함께 소멸). {@code TreeMap} dedup은 배치 내 같은 device의 중복 INSERT
+     * 시도를 줄이려 유지한다.
      */
-    private void upsertDevices(List<Telemetry> batch) {
-        Map<String, Telemetry> latestPerDevice = new TreeMap<>();
+    private void registerDevices(List<Telemetry> batch) {
+        Map<String, Telemetry> onePerDevice = new TreeMap<>();
         for (Telemetry t : batch) {
-            latestPerDevice.merge(
-                    t.getDeviceId(),
-                    t,
-                    (a, b) -> b.getReceivedAt().isAfter(a.getReceivedAt()) ? b : a);
+            onePerDevice.putIfAbsent(t.getDeviceId(), t);
         }
-        List<Object[]> rows = new ArrayList<>(latestPerDevice.size());
-        for (Telemetry t : latestPerDevice.values()) {
+        List<Object[]> rows = new ArrayList<>(onePerDevice.size());
+        for (Telemetry t : onePerDevice.values()) {
             rows.add(
                     new Object[] {
                         t.getDeviceId(),
                         t.getDeviceType().name(),
-                        DeviceStatus.ONLINE.name(),
-                        Timestamp.from(t.getReceivedAt()), // first_seen_at (INSERT 시에만 의미)
-                        Timestamp.from(t.getReceivedAt()) // last_seen_at
+                        Timestamp.from(t.getReceivedAt()) // first_seen_at (INSERT 시에만 의미)
                     });
         }
-        jdbc.batchUpdate(UPSERT_DEVICE, rows);
+        jdbc.batchUpdate(REGISTER_DEVICE, rows);
     }
 
     private String toJson(Map<String, Object> metrics) {

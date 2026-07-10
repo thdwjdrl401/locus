@@ -2,7 +2,6 @@ package com.thdwjdrl.locus.app.telemetry;
 
 import com.thdwjdrl.locus.app.device.DeviceRepository;
 import com.thdwjdrl.locus.core.domain.Device;
-import com.thdwjdrl.locus.core.domain.DeviceStatus;
 import com.thdwjdrl.locus.core.domain.Telemetry;
 import jakarta.persistence.EntityManager;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -43,7 +42,7 @@ public class DirectIngestWriter implements TelemetryIngestPort {
     @Override
     @Transactional
     public void submit(Telemetry telemetry) {
-        Device device = upsertDevice(telemetry);
+        Device device = ensureRegistered(telemetry);
         entityManager.persist(telemetry);
         publishAfterCommit(device.getOrgId(), telemetry);
     }
@@ -65,23 +64,21 @@ public class DirectIngestWriter implements TelemetryIngestPort {
                 });
     }
 
-    /** 수집 경로에서 Device upsert(없으면 생성) — FK 없이도 고아 telemetry가 안 생기게. */
-    private Device upsertDevice(Telemetry telemetry) {
-        Device device =
-                deviceRepository
-                        .findByDeviceId(telemetry.getDeviceId())
-                        .orElseGet(
-                                () -> {
-                                    Device created =
-                                            new Device(
-                                                    telemetry.getDeviceId(),
-                                                    telemetry.getDeviceType());
-                                    created.setFirstSeenAt(telemetry.getReceivedAt());
-                                    return created;
-                                });
-        device.setLastSeenAt(telemetry.getReceivedAt());
-        device.setStatus(DeviceStatus.ONLINE);
-        deviceRepository.save(device);
-        return device;
+    /**
+     * 수집 경로에서 device를 insert-if-absent(레지스트리) — 처음 본 device만 INSERT하고, 라이브 상태(last_seen·status)는
+     * 갱신하지 않는다(그건 M4 최신상태 프로젝션이 소유). 기존 device는 managed 엔티티를 읽기만 하고 mutate하지 않으므로 flush 시 UPDATE가
+     * 나가지 않는다. FK 없이도 고아 telemetry를 막고, publish용 orgId를 확보한다.
+     */
+    private Device ensureRegistered(Telemetry telemetry) {
+        return deviceRepository
+                .findByDeviceId(telemetry.getDeviceId())
+                .orElseGet(
+                        () -> {
+                            Device created =
+                                    new Device(telemetry.getDeviceId(), telemetry.getDeviceType());
+                            created.setFirstSeenAt(telemetry.getReceivedAt());
+                            deviceRepository.save(created);
+                            return created;
+                        });
     }
 }
