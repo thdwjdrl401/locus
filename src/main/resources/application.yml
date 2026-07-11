@@ -79,7 +79,7 @@ locus:
     queue-capacity: ${INGEST_QUEUE_CAPACITY:10000}
     batch-size: ${INGEST_BATCH_SIZE:500}
     max-delay-ms: ${INGEST_MAX_DELAY_MS:200}
-    # false면 Device upsert 생략 = A2-x(핫패스 UPDATE 교란변수 격리)
+    # false면 Device 등록(insert-if-absent) 생략(레지스트리 미기록). 이름은 옛 upsert 잔재 — 측정 명령 호환 위해 유지(RISKS 잔가지).
     device-upsert: ${INGEST_DEVICE_UPSERT:true}
     # 배치 워커 스레드 수(M2-par 병렬화 / stream storage 컨슈머 수). 단일 워커 처리율 한계를 넘김. DB_POOL_MAX 이하로.
     workers: ${INGEST_WORKERS:1}
