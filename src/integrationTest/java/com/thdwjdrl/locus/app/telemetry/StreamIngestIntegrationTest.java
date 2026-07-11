@@ -109,13 +109,14 @@ class StreamIngestIntegrationTest extends IntegrationTestBase {
         await().atMost(Duration.ofSeconds(15))
                 .untilAsserted(() -> assertThat(telemetryRepository.count()).isEqualTo(n));
 
+        // storage 컨슈머가 device를 insert-if-absent로 등록(라이브 status는 미설정 → 기본 UNKNOWN).
         Device device = deviceRepository.findByDeviceId("stream-store").orElseThrow();
-        assertThat(device.getStatus().name()).isEqualTo("ONLINE");
+        assertThat(device.getStatus().name()).isEqualTo("UNKNOWN");
     }
 
     @Test
     void org_디바이스는_monitoring_컨슈머가_push한다() throws Exception {
-        // org 있는 디바이스만 push된다. 미리 org 부여(storage upsert는 org 보존).
+        // org 있는 디바이스만 push된다. 미리 org 부여(storage 등록은 DO NOTHING이라 기존 행·org 보존).
         deviceRepository.save(deviceWithOrg("stream-push", "org-7"));
 
         double before = meters.get("locus.push.sent").counter().count();

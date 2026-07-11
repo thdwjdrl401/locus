@@ -16,7 +16,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
-/** 수집 e2e — 실 TimescaleDB에 실제로 저장되는지(JSONB·임베디드·복합PK·upsert) 검증. */
+/** 수집 e2e — 실 TimescaleDB에 실제로 저장되는지(JSONB·임베디드·복합PK·device insert-if-absent) 검증. */
 class TelemetryIngestIntegrationTest extends IntegrationTestBase {
 
     @Autowired private MockMvc mockMvc;
@@ -86,7 +86,7 @@ class TelemetryIngestIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void 신규_후_재전송이면_device를_upsert한다() throws Exception {
+    void 신규_후_재전송이면_device는_1행_불변이고_텔레메트리만_쌓인다() throws Exception {
         postTelemetry(Instant.now().minusSeconds(10).toString(), "WHILE_IN_USE", true)
                 .andExpect(status().isAccepted());
         Device first = deviceRepository.findByDeviceId("phone-1").orElseThrow();
@@ -95,10 +95,11 @@ class TelemetryIngestIntegrationTest extends IntegrationTestBase {
         postTelemetry(Instant.now().toString(), "WHILE_IN_USE", true)
                 .andExpect(status().isAccepted());
 
+        // insert-if-absent: 재전송해도 device는 1행·불변(라이브 상태는 최신상태 프로젝션이 소유).
         assertThat(deviceRepository.count()).isEqualTo(1);
         Device after = deviceRepository.findByDeviceId("phone-1").orElseThrow();
         assertThat(after.getFirstSeenAt()).isEqualTo(firstSeen); // 생성 시각 유지
-        assertThat(after.getLastSeenAt()).isAfterOrEqualTo(firstSeen); // 최근 수신 갱신
+        assertThat(after.getLastSeenAt()).isNull(); // 라이브 상태 미갱신
         assertThat(telemetryRepository.count()).isEqualTo(2);
     }
 }

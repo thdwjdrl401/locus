@@ -62,7 +62,7 @@ class TelemetryQueueIngestIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void N건을_큐로_받아_배치로_적재하고_device를_upsert한다() throws Exception {
+    void N건을_큐로_받아_배치로_적재하고_device는_1행_등록된다() throws Exception {
         Instant base = Instant.now().minusSeconds(300);
         int n = 250; // batch-size(100)보다 커서 여러 배치로 나뉘어 flush
         for (int i = 0; i < n; i++) {
@@ -72,11 +72,12 @@ class TelemetryQueueIngestIntegrationTest extends IntegrationTestBase {
         await().atMost(Duration.ofSeconds(10))
                 .untilAsserted(() -> assertThat(telemetryRepository.count()).isEqualTo(n));
 
-        // 같은 deviceId 250건 → device는 1행으로 upsert(워커 배치 내 dedupe + ON CONFLICT DO UPDATE)
+        // 같은 deviceId 250건 → device는 1행 insert-if-absent(배치 내 dedupe + ON CONFLICT DO NOTHING).
+        // 라이브 상태(status·last_seen)는 미기록 — 최신상태 프로젝션이 소유(강등).
         assertThat(deviceRepository.count()).isEqualTo(1);
         Device device = deviceRepository.findByDeviceId("phone-1").orElseThrow();
-        assertThat(device.getStatus().name()).isEqualTo("ONLINE");
-        assertThat(device.getLastSeenAt()).isNotNull();
+        assertThat(device.getStatus().name()).isEqualTo("UNKNOWN");
+        assertThat(device.getLastSeenAt()).isNull();
     }
 
     @Test
