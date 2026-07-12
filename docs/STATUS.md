@@ -6,12 +6,13 @@
 
 ---
 
-## 현재 포커스 — M5 지오펜스(브라우저 검증 대기) · device 데모션 재검토(perf 명분 소멸 → refactor/M4c)
+## 현재 포커스 — 전 구간 통합 소크 완료(M-e2e-soak: 무손실 + 천장 규명) · M5 지오펜스(브라우저 검증 대기) · device 데모션 재검토(perf 명분 소멸 → refactor/M4c)
 
 | | |
 |---|---|
 | **🔄 재검토 (2026-07-09)** | **device 핫라이트 데모션** — 적재가 텔레메트리마다 `device` 행을 UPDATE(`last_seen`·`status`)하던 걸 **insert-if-absent로 강등**(두 write 경로 `DO UPDATE`→`DO NOTHING`, 코드·테스트 green, **미커밋**). **근거 재평가**: 트리거였던 disk-baseline "sync 지연 병목"은 naive regime 한정이고 배치 SLO 운영점은 **CPU 바운드**([M-http-capacity](measurements/M-http-capacity.md) — device upsert 켠 채 12–16K 도달·디스크 68% 여유) → **perf 명분 소멸**(처리량·autovacuum 측정해도 차이 ~0이라 측정 안 함). **남은 명분은 구조**: registry↔live-state 분리 + M4 스펙 "status=파생" 이행 + status ONLINE-only 버그. → `perf:` 아닌 **`refactor:`로, 또는 read 파생·컬럼삭제와 함께 M4c로 접기** 검토 중(리스크 [R5a](RISKS.md)와 동일 지점 — 등록부는 "수용·낮음"). |
 | **한 줄** | **M3 완료(2026-07-04)**: 수집 봉투를 디바이스 무관하게 재설계(공통칸 + `metrics` JSONB 자유칸)하고 최소수집 게이트를 `DeviceTypeHandler.gate()` 전략으로 옮긴 뒤, 둘째 타입 `AMR`을 추가해 **새 타입 추가 시 core diff = enum 값 1줄 + 게이트 훅 1개뿐**(engine·엔티티 불변)임을 실증. AMR 동작(검증·시뮬·metrics)은 전부 app. 폰 프라이버시 게이트는 동작 불변(테스트로 못박음). 단위·ArchUnit green(60 tests). 통합테스트는 로컬 Docker 미기동으로 컴파일까지 확인. |
+| **직전 측정 (M-e2e-soak, 2026-07-12)** | **전 구간 60분+ 무손실**(HTTP→Redis Streams→TimescaleDB). 양끝 정산 k6 발신 38,616,836 ≈ 스트림 수신 38,617,038, storage/monitoring lag·pending·poison 0. 지속 천장 = **단일 맥 부하기**(load 11.47>코어·sys 35%·램 고갈), 서버는 여유(p95 24ms·disk 70%) → "9.7k"의 원인 규명(파이프라인 아님). 가상 스레드는 회귀로 기각(무제한 admission이 공유 직렬화 지점 과부하). 상세 [measurements/M-e2e-soak.md](measurements/M-e2e-soak.md). |
 | **직전 측정 (M-http-capacity)** | **HTTP 인입 천장 = 스토리지 아니라 박스 CPU**(2026-07-08). fresh 볼륨 함대 스윕(`telemetry-fleet.js`, VU=디바이스 1Hz)으로 knee 규명: 코어 핀 6→8에 12K→16K 선형 확장(+33%)=CPU 바운드 확증, 지배분은 앱 요청 처리(≈0.3ms/req). M-MQTT의 "HTTP~10K=k6 한계/스토리지9.7K" 귀속 정정(누적 DB상태 열화+붕괴구간 값이었음). 스레드·큐락·Poller 반증. 상세 [measurements/M-http-capacity.md](measurements/M-http-capacity.md). |
 | **직전 완료 (M-MQTT)** | IoT 표준 수집 전송(디바이스 uplink) + 병목 규명·개선 완결. 인입 병렬화로 3.25K→~9K(2.8배)·HTTP 천장 근접. 브로커=Mosquitto. 상세 [measurements/M-MQTT.md](measurements/M-MQTT.md). |
 | **직전 완료 (M4b B)** | Redis Streams 적재 fan-out 박스 측정: **지속 10k 무손실**(워커4·MAXLEN400K)·**재시작 at-least-once**. 상세 [measurements/M4b.md](measurements/M4b.md)·[raw](measurements/M4b-raw/). 커밋 `f481eb2`·CI green. |
@@ -43,6 +44,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 
 | 날짜 | 결정 | 어디에 |
 |---|---|---|
+| 2026-07-12 | **전 구간 통합 소크 — 60분+ 무손실 + 지속 천장 규명** — HTTP→Redis Streams→TimescaleDB 전 구간 60분+ 10k 무손실(양끝 정산: k6 발신 ≈ 스트림 수신 ≈ 전량 적재, storage/monitoring lag·pending·poison 0). 지속 천장 = **단일 맥 부하기**(load avg 11.47>코어 10·sys 35%·램 고갈·k6 136%), 서버측 헤드룸(p95 24ms·disk 70%) → "9.7k"는 파이프라인 아니라 부하기. **가상 스레드 회귀로 기각**(무제한 admission이 공유 직렬화 지점 과부하, 바운드 풀=유익한 admission control; Little 법칙 300=10k×30ms). mbean 플래그=관측 전용(성능 무관). device upsert on 병목 아님 재확인(R5a 뒷받침). 오판 기록: 9.7k를 disk·DB 신선도로 오귀속했다가 서버측 정상+맥측 포화로 정정 | **[M-e2e-soak.md](measurements/M-e2e-soak.md)** |
 | 2026-06-28 | **성능 헤드라인 우선**(쓰기/읽기 두 경로 대상, 나머지 보조) | 이 문서 §포지셔닝 |
 | 2026-06-28 | **M1 = fsync 분할 실험**(배치 insert·flush 설정·그룹 커밋, 결정적 지표=fsync/req) | [`M1.md`](measurements/M1.md) |
 | 2026-06-28 | **M2 = 인메모리 큐 배치**(외부 브로커 0). 최대 처리량은 싱크가 올린다, 큐 아님 | ROADMAP 매핑표 |
