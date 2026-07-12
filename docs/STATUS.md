@@ -44,6 +44,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 
 | 날짜 | 결정 | 어디에 |
 |---|---|---|
+| 2026-07-13 | **문서 정비(외부 독자 점검)** — README 링크 문서 전수 점검(깨진 링크 0·수치 불일치 0 확인) 후 낡은 서술 일괄 수정: ROADMAP SLO 표 "현재" 열(1,437→10k 달성)·마일스톤 마커, M-MQTT 상태 헤더(측정 예정→완료+결과 요약), measurements/README 인덱스 현행화(1개→12개), SECURITY 인증(M4 구현→보류), RISKS R3 출처·R4 워커 수(12→4 기본), "계획서" 참조에 비공개 문서 각주, 조어("유령")·의인화("거짓말") 제거, M-e2e-soak에 PromQL 재현 표 추가, README mermaid 다이어그램 교체+geofence→push 간선. 잔여(별도): PERFORMANCE 서사 M-MQTT 이후 3단 추가, STRUCTURE 트리 M5 반영 | README, ROADMAP, STRUCTURE, RISKS, SECURITY, ADR 0004·0005, measurements/{README,M-MQTT,M4b,disk-baseline,M-e2e-soak} |
 | 2026-07-12 | **README 전면 갱신(포트폴리오 공개 대비)** — M1 시점(MySQL·44배 고정, TimescaleDB/Redis/MQTT=로드맵 표기)에 멈춰 있던 것을 현재 상태로: 헤드라인=전 구간 60분+ 무손실 + 적재 개선 기록 표(33→1,437→10k), 측정 기록을 시간순 `<details>`(summary=결론, 본문=근거)로, 스택·빠른시작·로드맵 현행화 | `README.md` |
 | 2026-07-12 | **전 구간 통합 소크 — 60분+ 무손실 + 지속 천장 규명** — HTTP→Redis Streams→TimescaleDB 전 구간 60분+ 10k 무손실(양끝 정산: k6 발신 ≈ 스트림 수신 ≈ 전량 적재, storage/monitoring lag·pending·poison 0). 지속 천장 = **단일 맥 부하기**(load avg 11.47>코어 10·sys 35%·램 고갈·k6 136%), 서버측 헤드룸(p95 24ms·disk 70%) → "9.7k"는 파이프라인 아니라 부하기. **가상 스레드 회귀로 기각**(무제한 admission이 공유 직렬화 지점 과부하, 바운드 풀=유익한 admission control; Little 법칙 300=10k×30ms). mbean 플래그=관측 전용(성능 무관). device upsert on 병목 아님 재확인(R5a 뒷받침). 오판 기록: 9.7k를 disk·DB 신선도로 오귀속했다가 서버측 정상+맥측 포화로 정정 | **[M-e2e-soak.md](measurements/M-e2e-soak.md)** |
 | 2026-06-28 | **성능 헤드라인 우선**(쓰기/읽기 두 경로 대상, 나머지 보조) | 이 문서 §포지셔닝 |

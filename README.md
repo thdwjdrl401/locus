@@ -31,12 +31,23 @@
 
 ## 아키텍처
 
-```
-Device ─ HTTP / MQTT(Mosquitto) → [수집·검증] → Redis Streams (fan-out)
-                                       ├ storage CG(워커 N) → TimescaleDB 하이퍼테이블
-                                       │                      (5분 청크 · 12h retention)
-                                       ├ monitoring CG → WebSocket/STOMP push → 관제 지도
-                                       └ geofence CG → 도달/이탈 판정(core.engine)
+```mermaid
+flowchart LR
+    DEV["디바이스<br/>PHONE · AMR"]
+    MQ["Mosquitto<br/>(MQTT 브로커)"]
+    IN["수집·검증<br/>(Spring Boot)"]
+    ST[("Redis Streams<br/>telemetry.stream")]
+    DB[("TimescaleDB 하이퍼테이블<br/>5분 청크 · retention 12h")]
+    WS["WebSocket/STOMP push"]
+    MAP["관제 지도"]
+    GF["도달/이탈 판정<br/>(core.engine)"]
+
+    DEV -->|HTTP| IN
+    DEV -->|MQTT| MQ --> IN
+    IN -->|XADD| ST
+    ST -->|"storage 컨슈머 그룹 (워커 N)"| DB
+    ST -->|"monitoring 컨슈머 그룹"| WS --> MAP
+    ST -->|"geofence 컨슈머 그룹"| GF -->|"판정 이벤트"| WS
 ```
 
 - 수집 전송 = HTTP + MQTT(다른 계층, 공존) · fan-out = Redis Streams 컨슈머 그룹 · 저장 = TimescaleDB.
@@ -108,7 +119,7 @@ M1 이후 남은 병목은 data fsync(InnoDB B-tree 제자리 갱신 = 랜덤 �
 
 - 지속 10k 무손실(워커 4·MAXLEN 400K — maxmemory에서 역산해 사이징), 재시작 시 pending 회수로 at-least-once 실증.
 - 짧은 부하는 warm-up을 정상상태로 오인한다는 것도 이때 기록(90s 런의 "10K 못 버팀"은 트랜지언트, 5분 런으로 정정).
-- 포이즌 내성: 트림된 유령 pending·손상 JSON이 두 컨슈머를 각각 망가뜨리던 버그를 수정(처리 불가 엔트리는 드롭·카운트, 좋은 엔트리만 처리 후 XACK).
+- 포이즌 내성: 트림돼 payload가 없는 pending 엔트리·손상 JSON이 두 컨슈머를 각각 망가뜨리던 버그를 수정(처리 불가 엔트리는 드롭·카운트, 좋은 엔트리만 처리 후 XACK).
 
 상세: [M4b.md](docs/measurements/M4b.md)
 </details>
@@ -125,6 +136,8 @@ MQTT(Mosquitto, `telemetry/{deviceId}`) 수집 추가. 첫 측정에서 ~3.25K �
 <summary><b>M3 — 추상화 검증: 둘째 디바이스 타입(AMR) 추가에 core 로직 diff 0</b></summary>
 
 수집 봉투를 디바이스 무관하게 재설계(공통칸 + `metrics` JSONB)하고 최소수집 게이트를 `DeviceTypeHandler.gate()` 전략으로 이동. 로봇 타입 `AMR`을 추가했을 때 core 변경은 enum 값 1줄 + 게이트 훅뿐(판정 엔진·엔티티 불변) — 양축 추상화가 실제로 동작함을 diff로 검증. 폰 프라이버시 게이트(permission=DENIED → 위치 미수집)는 동작 불변을 테스트로 고정.
+
+상세: 성능 측정이 아니라 구조 검증이라 별도 측정 문서 없음 — 근거는 ArchUnit 경계 테스트·core diff([STATUS](docs/STATUS.md) M3 절).
 </details>
 
 <details>

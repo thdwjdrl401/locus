@@ -1,6 +1,7 @@
 # M-MQTT — MQTT 수집 경로 (디바이스 uplink)
 
-> 상태: **측정 프로토콜 확정(2026-07-03), 측정 예정.** 트리거: IoT 표준 수집 전송 추가([ADR 0007 §MQTT](../decisions/0007-messaging-storage-redis-streams-and-governance.md)). MQTT 어댑터가 브로커를 구독해 `TelemetryRequest`로 역직렬화·검증한 뒤 HTTP와 같은 `TelemetryIngestService`로 합류한다(core 변경 0).
+> 상태: **측정 완료(2026-07-04).** 결과 요약 — 인입 병렬화(워커 스레드 8 + shared subscription 다중 연결)로 **3.25K → ~9K req/s(2.8배)**. 병목은 저장이 아니라 인입 계층(단일 Paho 콜백 스레드)이었고, MQTT 10K 초과는 브로커 스케일(Mosquitto 단일 스레드)이 다음 벽이다. 상세는 §런1~런3.
+> 트리거: IoT 표준 수집 전송 추가([ADR 0007 §MQTT](../decisions/0007-messaging-storage-redis-streams-and-governance.md)). MQTT 어댑터가 브로커를 구독해 `TelemetryRequest`로 역직렬화·검증한 뒤 HTTP와 같은 `TelemetryIngestService`로 합류한다(core 변경 0).
 > 측정: 박스(SUT)에서 `mode=stream` 실 기동(Mosquitto·Redis·TimescaleDB) + 맥에서 emqtt-bench 부하. 절대수치는 이 HDD 박스 종속 → 구조·설정 간 비율로 해석. 대시보드 `locus-mqtt`.
 
 ## 목표

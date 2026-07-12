@@ -24,7 +24,7 @@
 
 1. **순차 스트리밍(①) = 61.7 MB/s.** 헤드가 안 튀므로 대역폭이 최대. 적재에서 이 한계에 닿은 적은 없다(ADR 0008 검산: 10k 적재 ≈ 5MB/s = 이 대역폭의 ~8%).
 2. **랜덤 쓰기, sync 없음(②) = 169 IOPS @ 5.3ms.** 5.3ms ≈ 5400rpm 평균 회전지연(5.55ms). 즉 랜덤 쓰기는 **회전 한 바퀴 대기**에 묶인 순수 seek/회전 바운드. 4GB 연속 파일이라 seek는 작고 회전지연이 지배.
-3. **durable sync(③) = ~20/s @ 50ms.** ②(5.3ms)보다 ~10배 무겁다 — `fdatasync`가 데이터 블록 + ext4 저널 커밋 + 드라이브 캐시 플러시까지 강제(회전 여러 바퀴). write() 자체는 63µs(캐시행)이고 비용 전부가 sync 장벽에 있다. **드라이브가 fsync로 거짓말하지 않는다**(캐시가 속이면 sub-1ms) → PostgreSQL `synchronous_commit=on`이 실제로 겪는 물리와 동일 조건.
+3. **durable sync(③) = ~20/s @ 50ms.** ②(5.3ms)보다 ~10배 무겁다 — `fdatasync`가 데이터 블록 + ext4 저널 커밋 + 드라이브 캐시 플러시까지 강제(회전 여러 바퀴). write() 자체는 63µs(캐시행)이고 비용 전부가 sync 장벽에 있다. **드라이브 캐시가 fsync 완료를 조기 보고하지 않는다**(조기 보고라면 sub-1ms가 나온다) → PostgreSQL `synchronous_commit=on`이 실제로 겪는 물리와 동일 조건.
 
 ## 적재 처리량이 이 물리에서 나오는 방식
 
@@ -74,7 +74,7 @@ fio --name=fsynctest --directory=/root/fio-test --rw=write --bs=8k --size=1G \
     --ioengine=psync --fdatasync=1 --iodepth=1 --runtime=60 --time_based --unlink=1 | tee ~/fio-out/3-fsync.txt
 ```
 
-원본 출력은 박스 `~/fio-out/{1,2,3}-*.txt` → 커밋 시 `docs/measurements/disk-baseline-raw/`로 복사.
+원본 출력은 박스 `~/fio-out/{1,2,3}-*.txt`에 있다(저장소 미포함 — 위 fio 명령으로 재현 가능).
 
 ## 교차 참조 / 정정 대상
 - [ADR 0008](../decisions/0008-telemetry-store-timescaledb.md) §검산("10k ≈ 5MB/s = 대역폭 5%, 병목은 랜덤 쓰기") — 이 기준선이 실측으로 뒷받침.

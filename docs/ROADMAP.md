@@ -1,6 +1,8 @@
 # 마일스톤 → 트리 위치 매핑
 
-각 마일스톤이 코드의 **어디에 떨어지는지**와 그때 **추가되는 인프라/포트**. 상세는 계획서.
+각 마일스톤이 코드의 **어디에 떨어지는지**와 그때 **추가되는 인프라/포트**.
+
+> 문서 곳곳의 "계획서"는 저장소 밖의 초기 기획 문서(비공개)다. 핵심 원칙은 `CLAUDE.md`·[conventions.md](conventions.md)에 반영돼 있어 본문 이해에 필수는 아니다.
 
 ## 목표 SLO + 도메인 포지셔닝 (2026-06-30)
 **도메인: IoT/센서 텔레메트리 수집·처리 파이프라인 + 실시간 데이터 연계.**
@@ -8,9 +10,9 @@
 **목표 SLO (설계 목표 — 도메인 요구가 고정돼 있지 않아 직접 정함):**
 | 경로 | 목표 | 현재 | 달성 수단 |
 |---|---|---|---|
-| 업링크 적재 | **10,000 req/s** | M1 1,437 (14%) | 순차 저장(TimescaleDB) — 디스크 병목의 측정 기반 답 |
-| 조회 최신 | 1만 대 실시간 | naive 서브쿼리 | Redis 캐시 + WebSocket(M4) |
-| 다운링크 명령 | ~500~1,000대 | — | 정합성(멱등·ack·순서, 페이즈2) |
+| 업링크 적재 | **10,000 req/s** | **달성** — 지속 10k 무손실([M2-par](measurements/M2-par.md)·[M2-sustain](measurements/M2-sustain.md)) + 전 구간 60분+ 무손실([M-e2e-soak](measurements/M-e2e-soak.md)) | 배치 적재 + 순차 저장(TimescaleDB) + 워커 병렬화 + Streams fan-out |
+| 조회 최신 | 1만 대 실시간 | 조회 p95 35ms([M4a](measurements/M4a.md) 쿼리 재설계) + WebSocket push([M4b](measurements/M4b.md)). 잔여: 1만 마커 브라우저 렌더(M4b-A) | LATERAL 쿼리 + Streams push |
+| 다운링크 명령 | ~500~1,000대 | — (페이즈2) | 정합성(멱등·ack·순서, 페이즈2) |
 > 가치는 **측정된 서사**(랜덤→순차 X배)지 10k 숫자 자체 아님. 실측 최대치(헤드룸)도 함께 측정.
 
 **다룰 핵심 기술** (이 도메인에서 자연히 요구되는 것):
@@ -22,11 +24,11 @@
 
 | M | 주제 | 주요 위치 | 추가 인프라 | 포트(0004) |
 |---|---|---|---|---|
-| **M0** | 모델·검증·시뮬레이터·측정 | `core.domain`, `app.telemetry`, `app.device`, `app.simulator` | MySQL | — |
+| **M0** | 모델·검증·시뮬레이터·측정 ✅ | `core.domain`, `app.telemetry`, `app.device`, `app.simulator` | MySQL | — |
 | **M1** | 적재 포화점 높이기(fsync 분할) ✅ | `app.telemetry`(인메모리 큐+배치), MySQL 설정, k6 | — | 수집 `TelemetryIngestPort`(A2) |
-| **M2** | **TimescaleDB 전환**(순차 저장) ★PostgreSQL+시계열 | `core.domain`/`app.telemetry` 영속 이식, `TelemetryBatchDao` | **TimescaleDB**(PostgreSQL 확장) | (배치 DAO 재사용) |
-| **M4** | **실시간: Redis 캐시 + WebSocket 푸시** ★WebSocket ([스펙](specs/M4-realtime-read-path.md)) | `app.telemetry`/`device`, `app.config(Redis/WebSocket)` | **Redis**(캐시+Streams fan-out, [0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)) | `LatestStateLookup` |
-| **M-MQTT** | **MQTT 수집 경로** ★브로커 | `app.telemetry`(MQTT 수신 어댑터→기존 `IngestService` 합류) | **MQTT broker**(Mosquitto 등) | 수집 입구만 확장 |
+| **M2** | **TimescaleDB 전환**(순차 저장) ✅ ★PostgreSQL+시계열 | `core.domain`/`app.telemetry` 영속 이식, `TelemetryBatchDao` | **TimescaleDB**(PostgreSQL 확장) | (배치 DAO 재사용) |
+| **M4** | **실시간: Redis 캐시 + WebSocket 푸시** ✅(잔여: 인증) ★WebSocket ([스펙](specs/M4-realtime-read-path.md)) | `app.telemetry`/`device`, `app.config(Redis/WebSocket)` | **Redis**(캐시+Streams fan-out, [0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)) | `LatestStateLookup` |
+| **M-MQTT** | **MQTT 수집 경로** ✅ ★브로커 | `app.telemetry`(MQTT 수신 어댑터→기존 `IngestService` 합류) | **MQTT broker**(Mosquitto) | 수집 입구만 확장 |
 | **M3** | 추상화 검증(디바이스 타입) ✅ | 봉투 일반화(공통칸+metrics 자유칸)·게이트를 `DeviceTypeHandler.gate` 전략으로·AMR 추가(`app.device`/`app.simulator`). core diff=enum 1줄+게이트 훅 | — | — |
 | **M5** | 도달/이탈 판정 엔진 🔄(슬라이스1: 엔진+CG+가시화) | `core.engine`(ReachEvaluator/RadiusEvaluator/ReachTransition), `app.geofence`(신규) | (Redis Stream `geofence` CG) | `GeofenceStateStore` |
 | **M6** | 민감정보 보호·보존 | `core.domain`(암호화), `app.support`(마스킹) | — (보존은 TimescaleDB retention 흡수, [0008](decisions/0008-telemetry-store-timescaledb.md)) | — |

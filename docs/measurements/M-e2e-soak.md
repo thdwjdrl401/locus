@@ -67,6 +67,19 @@
 - 닫힌 루프 1Hz 페이싱은 도착을 매끄럽게 만든다. 실제 함대의 상관된 버스트(재접속·리트라이·동기 wakeup)는 미측정이라 이 소크는 best-case에 가깝다.
 - 지속 천장은 부하기라 파이프라인의 진짜 천장은 아직 미측정(서버 여유: p95 24ms·disk 70%).
 
+## 원본·재현
+스크린샷·raw 덤프 대신 지표 출처를 명시한다. 서버측 수치는 전부 맥 Prometheus(박스 앱 `/actuator/prometheus` + node_exporter 스크레이프)의 range query에서 추출했다. 핵심 쿼리:
+
+| 지표 | PromQL |
+|---|---|
+| accepted 202/s | `sum(rate(http_server_requests_seconds_count{uri="/api/telemetry"}[2m]))` |
+| 서버 p95 | `histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{uri="/api/telemetry"}[2m])) by (le))` |
+| 적재율 | `rate(locus_ingest_inserted_total[2m])` |
+| flush 평균 | `rate(locus_ingest_flush_seconds_sum[2m]) / rate(locus_ingest_flush_seconds_count[2m])` |
+| 디스크 %util | `rate(node_disk_io_time_seconds_total[2m])` |
+
+무손실 정산의 Redis측 값은 `XINFO GROUPS telemetry.stream`(entries-read·lag·pending)·`XLEN`, 클라이언트측 값은 k6 종료 요약(`http_reqs`·`http_req_failed`·`device_period_ms`·`behind_schedule`), 부하기 포화 판정은 맥의 `uptime`(load average)·`top`(sys%·메모리)이다. 재현 절차는 [RUNBOOK](RUNBOOK.md) + 본문 측정 환경 표.
+
 ## 성과
 - 전 구간 60분+ 무손실을 **양끝 정산**(k6 발신 = 스트림 수신 = 전량 적재, lag·pending·poison 0)으로 확정. sub-path별 헤지 제거.
 - 지속 천장이 **단일 맥 부하기**임을 규명. 서버측 헤드룸(p95 24ms·disk 70%) 확인.

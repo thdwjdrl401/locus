@@ -5,7 +5,7 @@
 
 ## 목표
 1. **적재 처리량**: fan-out을 Streams로 바꿔도 목표 SLO(업링크 10k)를 무손실로 유지하는가.
-2. **재시작 무손실·무중복**: 부하 중 앱이 죽었다 살아나도 데이터를 잃지도 중복하지도 않는가(청크4 크래시 복구 = at-least-once + 멱등).
+2. **재시작 무손실·무중복**: 부하 중 앱이 죽었다 살아나도 데이터를 잃지도 중복하지도 않는가(크래시 복구 = at-least-once + 멱등).
 
 ## 구성
 - `mode=stream`: 수집 `POST /api/telemetry` → 검증 → `XADD telemetry.stream`(즉시 202). 두 컨슈머 그룹이 독립 커서로 각자 전량 소비 — `storage`(배치 적재, 적재 후 `XACK`, `ON CONFLICT (device_id, recorded_at) DO NOTHING`으로 멱등) · `monitoring`(WebSocket push, best-effort).
@@ -96,7 +96,7 @@ io.lettuce.core.RedisCommandExecutionException:
 - **DB = 202 성공수 정확히 일치 → 무손실.** DB가 202수를 초과 안 함 → **무중복**(재기동 시 storage가 자기 pending을 offset `"0"`부터 재처리, `ON CONFLICT`가 재처리분 흡수).
 - 다운타임 중 실패한 65K는 애초에 accepted가 아니니 DB 기대치가 아니다(정합).
 
-**청크4 크래시 복구(at-least-once + 멱등 재처리)를 실 Redis·실 kill로 검증.**
+**크래시 복구(at-least-once + 멱등 재처리)를 실 Redis·실 kill로 검증.**
 
 ---
 
@@ -130,7 +130,7 @@ M4b 본문은 워커 4에서 10K SLO 무손실을 확인하고 멈췄다(SLO 달
 - **개별 flush는 여전히 ~180ms**(HDD fsync 그대로)지만 8워커 병렬로 aggregate가 오름. 병렬화가 디스크 빈 사이클을 채움(util 77→86%, 큐 2→3.5) — 본문 "한계 2"의 sublinear 워커 효과 연장.
 - 12K에서 **CPU 82–98% + 디스크 큐 3.5** 동시 근접 = 다음 벽은 코어(CPU)+SSD(flush 지연). 하드웨어 블록.
 
-**이번 세션 오진 정정(측정 위생 기록):** 진단 중 "10K가 디스크 대역폭 벽"이라 했으나 틀렸다. disk %util 77%(포화 아님)에서 막힌 건 **워커4의 병렬화 부족**이었고 8워커로 12K까지 올랐다. **`%util`로 saturation을 판단한 게 오류** — 실제 신호는 flush 지연(20→190ms)·큐깊이(0→3.5)였다. (M4b 본문의 "workers4=10K SLO 무손실"은 유효; 이건 SLO 위 특성화.)
+**측정 중 오진 정정(2026-07-09, 측정 위생 기록):** 진단 중 "10K가 디스크 대역폭 벽"이라 했으나 틀렸다. disk %util 77%(포화 아님)에서 막힌 건 **워커4의 병렬화 부족**이었고 8워커로 12K까지 올랐다. **`%util`로 saturation을 판단한 게 오류** — 실제 신호는 flush 지연(20→190ms)·큐깊이(0→3.5)였다. (M4b 본문의 "workers4=10K SLO 무손실"은 유효; 이건 SLO 위 특성화.)
 
 주의(비교 범위): 이 12K는 8코어(0-7)·fleet 부하(`telemetry-fleet.js`, VU=디바이스)라 본문 10K(workers4·capacity 모델·코어0-5)와 apples-to-apples 아님. 깨끗한 단일변수 비교는 **세션 내 동일 8코어에서 워커 4→8(10K→12K)**.
 
