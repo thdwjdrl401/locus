@@ -51,7 +51,7 @@
 
 **처리 방향.** geofence 자체는 다중 컨슈머(shared subscription)나 배치 판정으로 스케일(별도 작업). 구조 차원에선: **내구 컨슈머는 사이징 + lag 알림**(임계 초과 시 경보), **best-effort 컨슈머는 유실 허용을 명시**. 자동 스케일은 별도 결정.
 
-## R5 — 잔가지
+## R5 — 경미한 위험
 
 - **R5a device UPSERT 핫패스 결합 (수용).** 매 배치가 device 갱신(죽은 튜플→autovacuum)을 텔레메트리 쓰기 경로에 얹는다. `fillfactor=70`·HOT로 튜닝됨. **on-path perf 비용은 사실상 무시 가능**으로 귀결(2026-07-09): 배치 운영점이 CPU 바운드([M-http-capacity](measurements/M-http-capacity.md) — device upsert **켠 채** 12–16K 도달·디스크 68% 여유)라 UPSERT를 빼도 처리량은 안 오른다(별도 A/B 불필요). **남은 개선 유인은 성능이 아니라 구조**: registry↔live-state 분리 + M4 스펙 "status=파생" 이행 + status ONLINE-only 버그. insert-if-absent 강등(`DO NOTHING`)을 준비(코드·테스트 green·미커밋)했으나 `perf:` 아닌 `refactor:`/M4c로 재프레임([STATUS](STATUS.md) 현재 포커스).
 - **R5b monitoring PEL 상한 없음 (관찰).** best-effort라 ACK를 안 하면 pending(PEL)이 누적(메모리). 현재 ~200으로 작음. 지속 증가하면 상한/주기적 XACK 필요.

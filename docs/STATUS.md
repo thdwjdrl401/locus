@@ -44,6 +44,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 
 | 날짜 | 결정 | 어디에 |
 |---|---|---|
+| 2026-07-13 | **표현 규칙 전수 정비(conventions §7)** — 전체 md 38개 점검(3에이전트 + 금지어 grep 교차) 후 공개 문서의 규칙 위반 일괄 수정: 비유 "천장"(→최대 처리량·한계, 22곳: M-http-capacity 제목 포함)·"벽"(→병목, 13곳), 과장 "재앙"(RUNBOOK)·"훌륭"(M2-sustain), 자기평가 라벨 "측정 정직성"(disk-baseline→재현 확인), 구어 "갔다"(ADR 0008)·"못 버틸 때"(ADR 0007·ROADMAP), 조어 "유령"(M4 스펙→잔류 엔트리)·"잔가지"(RISKS R5→경미한 위험), "묻어가다"(→포함, 3곳). 제외: STATUS 과거 로그 행(이력 보존)·conventions/CLAUDE(규칙 예문). 에이전트 과잉 플래그(두괄식 결론 제목·오판 정정 기록·"조용한 유실"=silent loss 표준 표현)는 위반 아님으로 기각 | README, measurements/{M-http-capacity,M-e2e-soak,M-MQTT,M4b,disk-baseline,M2-sustain,RUNBOOK,README,M-MQTT-raw}, ADR 0007·0008, ROADMAP, RISKS, specs/M4 |
 | 2026-07-13 | **문서 정비(외부 독자 점검)** — README 링크 문서 전수 점검(깨진 링크 0·수치 불일치 0 확인) 후 낡은 서술 일괄 수정: ROADMAP SLO 표 "현재" 열(1,437→10k 달성)·마일스톤 마커, M-MQTT 상태 헤더(측정 예정→완료+결과 요약), measurements/README 인덱스 현행화(1개→12개), SECURITY 인증(M4 구현→보류), RISKS R3 출처·R4 워커 수(12→4 기본), "계획서" 참조에 비공개 문서 각주, 조어("유령")·의인화("거짓말") 제거, M-e2e-soak에 PromQL 재현 표 추가, README mermaid 다이어그램 교체+geofence→push 간선. 잔여(별도): PERFORMANCE 서사 M-MQTT 이후 3단 추가, STRUCTURE 트리 M5 반영 | README, ROADMAP, STRUCTURE, RISKS, SECURITY, ADR 0004·0005, measurements/{README,M-MQTT,M4b,disk-baseline,M-e2e-soak} |
 | 2026-07-12 | **README 전면 갱신(포트폴리오 공개 대비)** — M1 시점(MySQL·44배 고정, TimescaleDB/Redis/MQTT=로드맵 표기)에 멈춰 있던 것을 현재 상태로: 헤드라인=전 구간 60분+ 무손실 + 적재 개선 기록 표(33→1,437→10k), 측정 기록을 시간순 `<details>`(summary=결론, 본문=근거)로, 스택·빠른시작·로드맵 현행화 | `README.md` |
 | 2026-07-12 | **전 구간 통합 소크 — 60분+ 무손실 + 지속 천장 규명** — HTTP→Redis Streams→TimescaleDB 전 구간 60분+ 10k 무손실(양끝 정산: k6 발신 ≈ 스트림 수신 ≈ 전량 적재, storage/monitoring lag·pending·poison 0). 지속 천장 = **단일 맥 부하기**(load avg 11.47>코어 10·sys 35%·램 고갈·k6 136%), 서버측 헤드룸(p95 24ms·disk 70%) → "9.7k"는 파이프라인 아니라 부하기. **가상 스레드 회귀로 기각**(무제한 admission이 공유 직렬화 지점 과부하, 바운드 풀=유익한 admission control; Little 법칙 300=10k×30ms). mbean 플래그=관측 전용(성능 무관). device upsert on 병목 아님 재확인(R5a 뒷받침). 오판 기록: 9.7k를 disk·DB 신선도로 오귀속했다가 서버측 정상+맥측 포화로 정정 | **[M-e2e-soak.md](measurements/M-e2e-soak.md)** |
@@ -196,7 +197,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 ## M6 — 민감정보 보호 · 보존  ⬜  보조
 - [ ] 위치 암호화 컬럼 · 로그/덤프 평문 차단
 - [ ] **보존 정책**(raw TTL + 폰 강제삭제/익명화) — DeviceType별 거버넌스, 미성년 위치 영구보관 금지 ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md))
-- [ ] **버퍼 PII 점검** — Redis 영속화(RDB/AOF)·백업에 위치 묻어가는지, `XACK`/`XDEL` 즉시 정리 (ADR 0007 §점검)
+- [ ] **버퍼 PII 점검** — Redis 영속화(RDB/AOF)·백업에 위치 포함되는지, `XACK`/`XDEL` 즉시 정리 (ADR 0007 §점검)
 
 ## M7 — 대용량 조회 · 복제  ⬜  읽기경로
 - [ ] recorded_at **시간 파티셔닝** + 커서 페이징 (오래된 파티션 drop = 보존 삭제 비용 ≈ 0)

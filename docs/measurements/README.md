@@ -39,7 +39,7 @@
 - [M4a.md](M4a.md) — 읽기 경로 쿼리 재설계: 관제 조회 p95 8.65s → 35ms(~250×)
 - [M4b.md](M4b.md) — Redis Streams fan-out: 지속 10k 무손실·재시작 at-least-once
 - [M-MQTT.md](M-MQTT.md) — MQTT 수집 경로: 인입 병렬화 3.25K → ~9K
-- [M-http-capacity.md](M-http-capacity.md) — HTTP 인입 천장 = 박스 CPU(12K → 16K 선형 확장)
+- [M-http-capacity.md](M-http-capacity.md) — HTTP 인입 최대 처리량의 병목 = 박스 CPU(12K → 16K 선형 확장)
 - [disk-baseline.md](disk-baseline.md) — fio HDD 특성화(fsync·seek 지연, regime 구분)
-- [M-e2e-soak.md](M-e2e-soak.md) — 전 구간 통합 소크: 60분+ 무손실, 지속 천장 = 부하 생성기
+- [M-e2e-soak.md](M-e2e-soak.md) — 전 구간 통합 소크: 60분+ 무손실, 지속 한계 = 부하 생성기
 - [RUNBOOK.md](RUNBOOK.md) — 2-머신 측정 절차

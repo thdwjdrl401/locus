@@ -32,7 +32,7 @@ cp .env.example .env
 #  → .env에서: MYSQL_HOST_PORT=3307
 #             DB_URL=jdbc:mysql://localhost:3307/locus?serverTimezone=UTC&characterEncoding=UTF-8
 
-# 부하 포트 LAN 개방(인증 없는 M0 엔드포인트 → LAN만, 공개는 nginx 443) + 스왑 회피(HDD라 스왑=재앙)
+# 부하 포트 LAN 개방(인증 없는 M0 엔드포인트 → LAN만, 공개는 nginx 443) + 스왑 회피(HDD 스왑은 측정을 무효화)
 sudo ufw allow from 192.168.219.0/24 to any port 8093
 sudo sysctl vm.swappiness=10
 ip -4 addr | grep inet      # ← 박스 IP 기억 (맥에서 씀)
