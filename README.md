@@ -9,6 +9,14 @@
 
 ---
 
+## 데모 — 실시간 관제
+
+| 실시간 위치 관제 (폰) | 지오펜스 판정 (로봇 순찰) |
+|---|---|
+| ![실시간 관제 지도](docs/assets/locus-phones.gif) | ![지오펜스 ENTER/EXIT](docs/assets/locus-robots.gif) |
+
+시뮬레이터가 폰·로봇 50대를 섞어 1Hz로 텔레메트리를 흘리고, 웹 지도가 WebSocket으로 실시간 반영합니다. 로봇이 작업구역 경계를 넘나들면 지오펜스 ENTER/EXIT가 판정돼 이벤트로 표시됩니다.
+
 ## 핵심 결과
 
 **단일 노후 박스(4코어·8GB·5400rpm HDD)에서, 1만 대 디바이스가 1초에 한 건씩 보내는 텔레메트리를 전 구간(HTTP → Redis Streams → TimescaleDB)에서 60분 이상 유실 없이 처리.** 보낸 쪽(k6 발신 38,616,836건) ≈ 받은 쪽(스트림 수신 38,617,038건) ≈ 저장한 쪽(미확인·포이즌 0)을 정산해 확인했습니다 — [M-e2e-soak](docs/measurements/M-e2e-soak.md).
