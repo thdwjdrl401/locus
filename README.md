@@ -1,7 +1,7 @@
 # Locus — 실시간 디바이스 텔레메트리 수집·처리 파이프라인
 
 물리 디바이스(폰·로봇·센서·장비)가 위치·상태를 실시간으로 올리고, 한 명이 다수를 모니터링하는 백본입니다.
-디바이스를 추상화해서 폰은 구체 타입(`PHONE`)일 뿐이고, 코어는 디바이스 종류를 모릅니다. 어떤 물리 객체든 같은 파이프라인으로 수집·반영합니다.
+디바이스를 추상화해서 폰(`PHONE`)·로봇(`AMR`)은 같은 코어를 공유하는 구체 타입일 뿐이고, 코어는 디바이스 종류를 모릅니다. 새 타입을 더해도 판정 엔진·엔티티는 불변입니다(M3에서 AMR 추가로 검증 — 아래 데모의 로봇이 그 둘째 타입). 어떤 물리 객체든 같은 파이프라인으로 수집·반영합니다.
 
 > IoT·디지털 트윈 맥락의 텔레메트리 백본입니다. 구체 적용 예: 현장학습 인솔 교사가 다수 학생 단말의 위치·상태를 실시간으로 모니터링.
 
@@ -145,7 +145,9 @@ MQTT(Mosquitto, `telemetry/{deviceId}`) 수집 추가. 첫 측정에서 ~3.25K �
 
 수집 봉투를 디바이스 무관하게 재설계(공통칸 + `metrics` JSONB)하고 최소수집 게이트를 `DeviceTypeHandler.gate()` 전략으로 이동. 로봇 타입 `AMR`을 추가했을 때 core 변경은 enum 값 1줄 + 게이트 훅뿐(판정 엔진·엔티티 불변) — 양축 추상화가 실제로 동작함을 diff로 검증. 폰 프라이버시 게이트(permission=DENIED → 위치 미수집)는 동작 불변을 테스트로 고정.
 
-상세: 성능 측정이 아니라 구조 검증이라 별도 측정 문서 없음 — 근거는 ArchUnit 경계 테스트·core diff([STATUS](docs/STATUS.md) M3 절).
+AMR 상태 스키마는 임의로 지어내지 않고 개방 표준(ROS 2 `common_interfaces` Apache-2.0 · VDA5050 MIT)을 참조해 이 저장소에서 독립 정의했습니다 — Boston Dynamics SDK는 제품 전용 라이선스(BDSDK-SL)라 제외. 로봇 고유 상태(`operatingMode`·`estopState`·`batteryStatus`·odom 등)는 `metrics` JSONB에 문자열 코드로 담아 core는 여전히 디바이스 타입을 모르고(상태 어휘는 `app`에만), `AmrHandler`가 물리적 모순(주행 중인데 비상정지·점검·충전)을 거부합니다.
+
+상세: 구조 검증이라 별도 측정 문서 없음 — 근거는 ArchUnit 경계 테스트·core diff([STATUS](docs/STATUS.md) M3 절), AMR 스키마 설계 근거는 [amr-telemetry.md](docs/reference/amr-telemetry.md).
 </details>
 
 <details>
