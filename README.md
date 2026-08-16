@@ -1,7 +1,7 @@
 # Locus — 실시간 디바이스 텔레메트리 수집·처리 파이프라인
 
 물리 디바이스(폰·로봇·센서·장비)가 위치·상태를 실시간으로 올리고, 한 명이 다수를 모니터링하는 백본입니다.
-디바이스를 추상화해서 폰(`PHONE`)·로봇(`AMR`)은 같은 코어를 공유하는 구체 타입일 뿐이고, 코어는 디바이스 종류를 모릅니다. 새 타입을 더해도 판정 엔진·엔티티는 불변입니다(M3에서 AMR 추가로 검증 — 아래 데모의 로봇이 그 둘째 타입). 어떤 물리 객체든 같은 파이프라인으로 수집·반영합니다.
+디바이스를 추상화해서 폰(`PHONE`)·로봇(`AMR`)은 같은 코어를 공유하는 구체 타입일 뿐이고 코어는 디바이스 종류를 모릅니다. 새 타입을 더해도 판정 엔진·엔티티는 불변입니다(M3에서 AMR 추가로 검증 — 아래 데모의 로봇이 그 둘째 타입). 어떤 물리 객체든 같은 파이프라인으로 수집·반영합니다.
 
 > IoT·디지털 트윈 맥락의 텔레메트리 백본입니다. 구체 적용 예: 현장학습 인솔 교사가 다수 학생 단말의 위치·상태를 실시간으로 모니터링.
 
@@ -164,7 +164,7 @@ fresh 볼륨 함대 스윕(1 VU = 1 디바이스 1Hz)으로 인입 상한 규명
 그동안 구간별로 따로 검증했던 것을 전 구간(HTTP → Streams → TimescaleDB)으로 한 번에: 1만 대 × 1Hz, 66분, **유실 0**(양끝 정산 — k6 발신 ≈ 스트림 수신 ≈ 전량 적재, lag·pending·포이즌 0).
 
 - 지속 처리량이 10k를 살짝 못 미친(~9.8k) 원인을 규명: 서버는 정상(p95 24ms·디스크 70%)인데 부하 머신이 포화(load 11.47 > 코어 10·메모리 고갈) — **한계는 파이프라인이 아니라 단일 부하 생성기**.
-- 가상 스레드 실험은 회귀로 기각(처리량 ↓·지연 25×) — 무제한 admission이 공유 직렬화 지점을 과부하시켰고, 바운드 스레드풀이 사실상의 admission control이었음. 오판·정정 과정 포함 기록.
+- 가상 스레드 실험은 회귀로 기각(처리량 ↓·지연 25×) — 무제한 admission이 공유 직렬화 지점을 과부하시켰고 바운드 스레드풀이 사실상의 admission control이었음. 오판·정정 과정 포함 기록.
 
 상세: [M-e2e-soak.md](docs/measurements/M-e2e-soak.md)
 </details>
@@ -181,7 +181,7 @@ fresh 볼륨 함대 스윕(1 VU = 1 디바이스 1Hz)으로 인입 상한 규명
 - **DeviceType이 데이터 거버넌스 축** — 디바이스 타입이 보존 정책과 데이터 도달 범위를 가릅니다(폰 위치는 장기 보존 경로가 구조상 없음). [ADR 0007](docs/decisions/0007-messaging-storage-redis-streams-and-governance.md)
 - **포트는 교체 지점에만** — 헥사고날 전면 채택 없이, 구현을 교체할 계획이 있는 이음새(수집·캐시·지오펜스 상태)에만 출력 포트. [ADR 0004](docs/decisions/0004-ports-only-at-improvement-seams.md)
 - **core는 infra-free + ArchUnit** — 도메인·전략·판정 엔진은 Spring·Kafka·Redis·Web에 의존하지 못합니다(빌드 게이트로 강제). [ADR 0002](docs/decisions/0002-single-module-with-archunit.md) · [ADR 0003](docs/decisions/0003-feature-slice-with-core-app-split.md)
-- **열린 위험은 등록부로** — 결정(ADR)·보류(ROADMAP)와 구분해, 알고 있는 미해결 위험(Redis 장애 시 버퍼 유실, 지속 과부하 시 조용한 트림 등)을 [RISKS.md](docs/RISKS.md)에 유지.
+- **열린 위험은 등록부로** — 결정(ADR)·보류(ROADMAP)와 구분해 알고 있는 미해결 위험(Redis 장애 시 버퍼 유실, 지속 과부하 시 조용한 트림 등)을 [RISKS.md](docs/RISKS.md)에 유지.
 
 ---
 
@@ -286,4 +286,4 @@ export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 - 🔄 **M8** 컨테이너 — 앱 이미지 + compose 한 줄 실행까지. k8s는 남음
 - ⬜ **M6** 민감정보 보호·보존 · **M7** 대용량 조회·복제 · (페이즈2) 명령 다운링크·정합성
 
-> 목표 SLO와 전체 마일스톤은 [ROADMAP](docs/ROADMAP.md)에 있습니다. 측정 근거 없이 기능을 늘리지 않고, 각 단계를 before/after로 정당화합니다.
+> 목표 SLO와 전체 마일스톤은 [ROADMAP](docs/ROADMAP.md)에 있습니다. 측정 근거 없이 기능을 늘리지 않고 각 단계를 before/after로 정당화합니다.
