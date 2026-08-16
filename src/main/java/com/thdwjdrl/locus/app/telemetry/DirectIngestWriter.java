@@ -30,14 +30,17 @@ public class DirectIngestWriter implements TelemetryIngestPort {
     private final DeviceRepository deviceRepository;
     private final EntityManager entityManager;
     private final LiveUpdatePublisher livePublisher;
+    private final IngestProperties props;
 
     public DirectIngestWriter(
             DeviceRepository deviceRepository,
             EntityManager entityManager,
-            LiveUpdatePublisher livePublisher) {
+            LiveUpdatePublisher livePublisher,
+            IngestProperties props) {
         this.deviceRepository = deviceRepository;
         this.entityManager = entityManager;
         this.livePublisher = livePublisher;
+        this.props = props;
     }
 
     @Override
@@ -77,6 +80,8 @@ public class DirectIngestWriter implements TelemetryIngestPort {
                                                     telemetry.getDeviceId(),
                                                     telemetry.getDeviceType());
                                     created.setFirstSeenAt(telemetry.getReceivedAt());
+                                    // 생성 시에만 org 배정. 기존 행의 org는 건드리지 않는다.
+                                    created.setOrgId(props.getDefaultOrg());
                                     return created;
                                 });
         device.setLastSeenAt(telemetry.getReceivedAt());

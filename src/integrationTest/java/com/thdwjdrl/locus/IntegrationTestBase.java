@@ -19,11 +19,23 @@ import org.testcontainers.utility.DockerImageName;
 @AutoConfigureMockMvc
 public abstract class IntegrationTestBase {
 
+    /**
+     * {@code max_connections}를 올려 띄운다 — <b>앱 설정은 그대로 두기 위해서</b>.
+     *
+     * <p>Spring TestContext는 컨텍스트를 캐시해 여러 개를 동시에 살려두고, 컨텍스트마다 HikariCP가 앱 기본값({@code
+     * DB_POOL_MAX:16})만큼 커넥션을 붙든다. 테스트 클래스가 늘면 Postgres 기본 {@code max_connections}(100)를 넘겨 뒤에 뜨는
+     * 컨텍스트가 {@code FATAL: sorry, too many clients already}로 통째로 실패한다(실행 순서를 따라 실패가 옮겨다녀 원인 추적이
+     * 어렵다).
+     *
+     * <p>앱 쪽 풀 크기를 테스트에서만 줄이면 테스트가 재는 조건이 실제 실행 조건과 달라진다. 그래서 손대는 쪽은 앱이 아니라 테스트용 DB 쪽이다. {@code
+     * fsync=off}는 Testcontainers 기본값이라 명시적으로 유지한다(빼면 테스트가 느려진다).
+     */
     @ServiceConnection
     static final PostgreSQLContainer<?> POSTGRES =
             new PostgreSQLContainer<>(
-                    DockerImageName.parse("timescale/timescaledb:2.17.2-pg16")
-                            .asCompatibleSubstituteFor("postgres"));
+                            DockerImageName.parse("timescale/timescaledb:2.17.2-pg16")
+                                    .asCompatibleSubstituteFor("postgres"))
+                    .withCommand("postgres", "-c", "fsync=off", "-c", "max_connections=300");
 
     static {
         POSTGRES.start();

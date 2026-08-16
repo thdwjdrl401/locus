@@ -52,6 +52,17 @@ public class IngestProperties {
      */
     private long streamMaxlen = 400_000;
 
+    /**
+     * 수집 경로에서 <b>새로 생성되는</b> Device에 넣을 조직(테넌트) id. {@code null}(기본)이면 org 없이 만든다.
+     *
+     * <p>org는 원래 enrollment(인증)가 정할 값이라 수집 경로가 정하는 게 최종형은 아니다. 다만 인증이 보류인 동안 org 없는 디바이스는 <b>어디에도 안
+     * 보인다</b> — 조회({@code GET /api/telemetry/latest?org=})·push({@code /topic/org/{org}})·지오펜스 판정이
+     * 전부 org로 라우팅하기 때문. 그래서 자체 등록 디바이스에 넣을 기본 org를 설정으로 연다. 인증 도입 시 enrollment가 이 자리를 대체한다.
+     *
+     * <p>기존 행의 org는 덮어쓰지 않는다(생성 시에만 적용) — 이미 배정된 조직을 수집이 되돌리면 안 된다.
+     */
+    private String defaultOrg = null;
+
     public String getMode() {
         return mode;
     }
@@ -114,5 +125,14 @@ public class IngestProperties {
 
     public void setStreamMaxlen(long streamMaxlen) {
         this.streamMaxlen = streamMaxlen;
+    }
+
+    public String getDefaultOrg() {
+        return defaultOrg;
+    }
+
+    /** 빈 문자열은 null로 접는다 — {@code INGEST_DEFAULT_ORG=} 같은 빈 env가 org=""인 디바이스를 만들지 않게. */
+    public void setDefaultOrg(String defaultOrg) {
+        this.defaultOrg = (defaultOrg == null || defaultOrg.isBlank()) ? null : defaultOrg.strip();
     }
 }

@@ -1,6 +1,11 @@
 # 시뮬레이터 프로파일 (결정 0005).
 # 실행: ./gradlew bootRun --args='--spring.profiles.active=simulator'
 locus:
+  ingest:
+    # 시뮬레이터가 만드는 디바이스를 org-0에 넣는다. 이게 없으면 org=null이라 관제 화면이 빈 채로 뜬다
+    # (지도는 ?org=org-0으로 조회하고 /topic/org/org-0을 구독, 지오펜스 시드 존도 org-0).
+    # 조직 배정은 원래 enrollment(인증)의 일 — 인증 보류 동안의 데모 경로다.
+    default-org: org-0
   simulator:
     enabled: true
     # 타입별 가상 디바이스 수 (Java 21 가상 스레드 1대=1스레드). 폰+AMR 혼합으로 타입 추상화(M3)를 데모.

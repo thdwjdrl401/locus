@@ -48,9 +48,12 @@ public class TelemetryBatchDao {
                     + "ON CONFLICT (device_id, recorded_at) DO NOTHING";
 
     // PostgreSQL EXCLUDED 행 별칭 — 삽입 시도값을 UPDATE SET에서 참조.
+    // org_id는 INSERT에만 있고 DO UPDATE엔 없다: 조직 배정은 생성 시 1회이고, 이미 배정된 org를
+    // 이후 수집이 되돌리면 안 된다(locus.ingest.default-org 참조).
     private static final String UPSERT_DEVICE =
-            "INSERT INTO device (device_id, device_type, status, first_seen_at, last_seen_at) "
-                    + "VALUES (?,?,?,?,?) "
+            "INSERT INTO device (device_id, device_type, status, first_seen_at, last_seen_at,"
+                    + " org_id) "
+                    + "VALUES (?,?,?,?,?,?) "
                     + "ON CONFLICT (device_id) DO UPDATE SET "
                     + " last_seen_at = GREATEST(COALESCE(device.last_seen_at, EXCLUDED.last_seen_at),"
                     + " EXCLUDED.last_seen_at), "
@@ -126,7 +129,8 @@ public class TelemetryBatchDao {
                         t.getDeviceType().name(),
                         DeviceStatus.ONLINE.name(),
                         Timestamp.from(t.getReceivedAt()), // first_seen_at (INSERT 시에만 의미)
-                        Timestamp.from(t.getReceivedAt()) // last_seen_at
+                        Timestamp.from(t.getReceivedAt()), // last_seen_at
+                        props.getDefaultOrg() // org_id (INSERT 시에만 — 기존 배정 보존)
                     });
         }
         jdbc.batchUpdate(UPSERT_DEVICE, rows);
