@@ -1,14 +1,14 @@
 # 측정 런북 (2-머신)
 
 타깃 박스(SUT)가 부하를 어디까지 버티는지 재고 최적화하기 위한 절차.
-**SUT(우분투 박스)** = Locus 앱 + Locus MySQL(docker). **맥북** = k6(부하) + Prometheus/Grafana(관측). 유선 LAN.
+**SUT(우분투 박스)** = Locus 앱 + Locus 인프라(docker: TimescaleDB·Redis·Mosquitto). **맥북** = k6(부하) + Prometheus/Grafana(관측). 유선 LAN.
 
-> **공존 전제**: 박스엔 다른 서비스용 시스템 MySQL(3306, 거의 무부하)이 영구 상주한다.
-> 운영=측정 일치를 위해 **시스템 MySQL은 끄지 않고** 측정 내내 idle·동일 상태로 둔다.
-> Locus는 **자기 docker MySQL을 3307**로 분리해 쓰고, **박스 ≈3/4(코어 0–5, 메모리 ~6G)** 로 격리한다(시스템 DB+OS에 1/4 예약). 절대수치는 이 3/4 샌드박스 종속 → **before/after 비율로 해석**.
+> **공존 전제**: 박스엔 다른 서비스용 시스템 MySQL(3306, 거의 무부하)이 영구 상주한다(Locus와 무관한 별개 서비스).
+> 운영=측정 일치를 위해 **끄지 않고** 측정 내내 idle·동일 상태로 둔다.
+> Locus 저장소는 **docker TimescaleDB**(M2에서 MySQL에서 전환, [ADR 0008](../decisions/0008-telemetry-store-timescaledb.md))를 쓰고, **박스 ≈3/4(코어 0–5, 메모리 ~6G)** 로 격리한다(시스템 서비스+OS에 1/4 예약). 절대수치는 이 3/4 샌드박스 종속 → **before/after 비율로 해석**.
 
 ```
-[박스 = SUT]  앱(java -jar) + MySQL(docker)
+[박스 = SUT]  앱(java -jar) + 인프라(docker: TimescaleDB·Redis·Mosquitto)
      ▲ 8093 부하        ▲ 8093/actuator/prometheus 스크레이프
      │ 유선 LAN          │ 유선 LAN
 [맥북]  k6           +   Prometheus + Grafana
@@ -27,10 +27,12 @@ java -version    # 21 확인
 # Docker는 이미 설치(앞 단계). repo 클론
 git clone https://github.com/thdwjdrl401/locus.git && cd locus
 
-# Locus는 시스템 MySQL과 포트가 겹치지 않게 3307로 분리한다(.env).
+# .env로 포트·자원 격리를 고정한다.
 cp .env.example .env
-#  → .env에서: MYSQL_HOST_PORT=3307
-#             DB_URL=jdbc:mysql://localhost:3307/locus?serverTimezone=UTC&characterEncoding=UTF-8
+#  → LOCUS_CPUSET=0-5   ← 측정 baseline. 이게 없으면 인프라가 코어 핀 없이 떠서 이전 측정과 비교 불가.
+#  → 박스에 시스템 PostgreSQL이 5432를 점유하면 분리:
+#      DB_HOST_PORT=5433
+#      DB_URL=jdbc:postgresql://localhost:5433/locus?reWriteBatchedInserts=true
 
 # 부하 포트 LAN 개방(인증 없는 M0 엔드포인트 → LAN만, 공개는 nginx 443) + 스왑 회피(HDD 스왑은 측정을 무효화)
 sudo ufw allow from 192.168.219.0/24 to any port 8093
@@ -43,16 +45,20 @@ ip -4 addr | grep inet      # ← 박스 IP 기억 (맥에서 씀)
 ```bash
 cd locus
 git pull                          # 최신 마일스톤 코드
-docker compose up -d              # Locus MySQL (8.0.40, 3307, buffer_pool 2G, cpuset 0-5, mem 3G)
+docker compose up -d              # 인프라만: TimescaleDB(pg16, shared_buffers 2G, cpuset 0-5, mem 3G)
+                                  #           + Redis + Mosquitto + node-exporter
+                                  # ⚠ --profile app 을 붙이지 않는다 — 컨테이너 앱이 같이 뜨면
+                                  #   호스트 JVM 앱과 같은 코어(0-5)를 나눠 써 교란변수가 된다.
 ./gradlew bootJar                 # 박스에서 빌드
 ./gradlew --stop                  # 측정 전 Gradle 데몬 종료 → 측정 중 RAM 오염 0
 scripts/run-app.sh                # jar를 taskset -c 0-5로 실행, 힙 1.5G 고정, logs/gc.log
 
-# 기동 직후 위생 점검: 시스템 MySQL은 살아있고, 스왑은 0이어야 한다.
-systemctl is-active mysql          # 시스템 DB active (공존 — 끄지 않음)
+# 기동 직후 위생 점검: 코어 핀이 걸렸고, 시스템 서비스는 그대로고, 스왑은 0이어야 한다.
+docker inspect -f '{{.HostConfig.CpusetCpus}}' locus-timescaledb   # 0-5 확인 (비어 있으면 .env의 LOCUS_CPUSET 누락)
+systemctl is-active mysql          # 박스의 다른 서비스 — 공존, 끄지 않음
 free -h                            # Swap used = 0 확인 (HDD 스왑 들어가면 측정 무효)
 ```
-> 깨끗한 baseline은 Locus DB만 초기화: `docker compose down -v && docker compose up -d` (Locus 볼륨만 삭제 — 시스템 MySQL과 무관).
+> 깨끗한 baseline은 Locus 볼륨만 초기화: `docker compose down -v && docker compose up -d` (박스의 다른 서비스와 무관).
 
 ## 2. 매 측정 — 맥북에서 관측 + 부하
 ```bash

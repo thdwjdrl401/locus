@@ -12,6 +12,8 @@
 |---|---|
 | **✅ 컨테이너화 (2026-08-11)** | **`docker compose --profile app up -d` 한 줄로 인프라+앱+시뮬레이터 기동.** 멀티스테이지 `Dockerfile`(레이어 분해 `jarmode=tools`·비루트 uid 999·actuator healthcheck), compose `app` 서비스(`app` 프로파일 뒤 — 기본 `up -d`는 인프라만이라 **측정 경로(호스트 JVM) 불변**). **앱 컨테이너의 자원 조건을 `scripts/run-app.sh`와 동일하게**: 코어 핀 `0-5`·힙 고정 `-Xms1500m -Xmx1500m`·G1GC — 컨테이너로 띄운 값이 기록된 측정과 어긋나지 않게. `cpuset`은 `LOCUS_CPUSET`으로 오버라이드만 열되 **기본값은 측정 baseline `0-5` 유지** — 개발 머신이 부족하면 핀을 푸는 게 아니라 Docker VM vCPU를 올리는 게 먼저다(macOS/Windows는 호스트 코어가 아니라 VM 할당이 기준: `colima start --cpu 8 --memory 8`). 검증: 맥 colima를 4→8 vCPU·8GiB로 올려 **오버라이드 없이 기본 `0-5` 적용 확인**(app·db·redis·mosquitto 전부 cpuset=0-5, JVM `-Xms1500m -Xmx1500m -XX:+UseG1GC`), 신규 볼륨에서 org-0 조회 50대(폰40·AMR10)·push≈적재·지오펜스 ENTER 44/EXIT 8·poison 0. |
 | **🐛 수정 (2026-08-11)** | **관제 화면이 신규 DB에서 빈 채로 뜨던 문제** — `device.org_id`를 채우는 코드가 **어디에도 없었다**(유일한 기록자는 측정용 `load/seed-latest-dataset.sql`). 지도는 `?org=org-0`으로 조회하고 `/topic/org/org-0`을 구독하는데 org가 null이라 조회는 빈 배열, monitoring·geofence 컨슈머는 전량 스킵. README 데모 GIF는 시드가 적용된 박스에서 녹화된 것이라 이 공백이 안 보였다. 수정: `locus.ingest.default-org`(기본 null — 기존 동작·측정 불변) 추가, 생성 시에만 배정하고 기존 org는 덮어쓰지 않음(두 적재 경로 모두). 시뮬레이터 프로파일이 `org-0` 제공. 조직 배정은 원래 enrollment(인증)의 일이라 그때까지의 손잡이. 회귀 테스트 `DeviceOrgScopeIntegrationTest` 동반 |
+| **✅ 문서 정합성 정비 (2026-08-15)** | 38개 문서 전수 점검(링크 깨짐 0). **낡은 사실 서술 정정**: `CLAUDE.md` 스택이 아직 "DB는 MySQL 8"이었던 것(M2에서 TimescaleDB 전환·MySQL 제거) + 인증 시점이 "M4"로 남아 있던 것(ROADMAP은 2026-07-03에 M4c/M6로 재설정) · **`RUNBOOK`이 존재하지 않는 MySQL 3307을 띄우라고 안내**하던 절차 9곳을 TimescaleDB 기준으로 교체(+`LOCUS_CPUSET=0-5` 필수 표기, 측정 시 `--profile app` 금지 경고, 코어 핀 확인 명령) · STATUS M7 "MySQL 읽기 복제"→PostgreSQL, Mission Archive 저장소 후보→TimescaleDB · `STRUCTURE` 트리에 `Dockerfile`·`.dockerignore`·`app/geofence/`·`application-stream.yml`·static 4파일 반영, "engine=package-info만" 정정 · M8 상태 표기를 STATUS 보드·ROADMAP에서 🔄로 통일 |
+| **✅ M5·M4b-A 검증 상태 확정 (2026-08-15)** | "브라우저 검증 대기"로 한 달 넘게 남아 있던 두 항목을 증적으로 닫음. 데모 GIF(2026-07-20 녹화, README 상단)에 시드 존 원·존 안팎 AMR·ENTER/EXIT 이벤트 피드·타입별 사이드바·오프라인 흐림·HUD 카운트(전체 50·AMR 10·PHONE 40·수신 30/s)·테마 토글·범례·AMR 상세(운영모드·긴급정지·odom·맵)가 전부 찍혀 있다. 판정 자체는 통합테스트 + 컨테이너 기동 측정(ENTER 44·EXIT 8·poison 0)으로 확인. M5는 슬라이스1 완료로 🔄 유지(잔여: CRUD·영속·폴리곤·판정 처리량 측정) |
 | **🐛 수정 (2026-08-11)** | **통합 테스트 커넥션 고갈** — 캐시된 테스트 컨텍스트마다 HikariCP가 앱 기본 16 커넥션을 붙들어 Postgres `max_connections`(100)를 넘기면 뒤 컨텍스트가 `too many clients already`로 통째로 실패. 실패가 실행 순서를 따라 옮겨다녀 원인 추적이 어려웠다(이 머신 기준 정비 전 4개 실패). **앱 풀 크기는 건드리지 않고**(테스트가 재는 조건이 실제 실행 조건과 달라지면 안 됨) 테스트용 Postgres 컨테이너를 `max_connections=300`으로 띄워 해결 → `check` green(단위·웹 + 통합 31) |
 | **🔄 재검토 (2026-07-09)** | **device 핫라이트 데모션** — 적재가 텔레메트리마다 `device` 행을 UPDATE(`last_seen`·`status`)하던 걸 **insert-if-absent로 강등**(두 write 경로 `DO UPDATE`→`DO NOTHING`, 코드·테스트 green, **미커밋**). **근거 재평가**: 트리거였던 disk-baseline "sync 지연 병목"은 naive regime 한정이고 배치 SLO 운영점은 **CPU 바운드**([M-http-capacity](measurements/M-http-capacity.md) — device upsert 켠 채 12–16K 도달·디스크 68% 여유) → **perf 명분 소멸**(처리량·autovacuum 측정해도 차이 ~0이라 측정 안 함). **남은 명분은 구조**: registry↔live-state 분리 + M4 스펙 "status=파생" 이행 + status ONLINE-only 버그. → `perf:` 아닌 **`refactor:`로, 또는 read 파생·컬럼삭제와 함께 M4c로 접기** 검토 중(리스크 [R5a](RISKS.md)와 동일 지점 — 등록부는 "수용·낮음"). |
 | **한 줄** | **M3 완료(2026-07-04)**: 수집 봉투를 디바이스 무관하게 재설계(공통칸 + `metrics` JSONB 자유칸)하고 최소수집 게이트를 `DeviceTypeHandler.gate()` 전략으로 옮긴 뒤, 둘째 타입 `AMR`을 추가해 **새 타입 추가 시 core diff = enum 값 1줄 + 게이트 훅 1개뿐**(engine·엔티티 불변)임을 실증. AMR 동작(검증·시뮬·metrics)은 전부 app. 폰 프라이버시 게이트는 동작 불변(테스트로 못박음). 단위·ArchUnit green(60 tests). 통합테스트는 로컬 Docker 미기동으로 컴파일까지 확인. |
@@ -96,7 +98,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 | **M4** | **실시간: 읽기경로 + Streams fan-out** | ✅ 코어 — M4a(읽기 ~250×)·M4b(지속 10k 무손실·재시작 at-least-once). 잔여: M4b-A(push 측정·관제 화면 스케일링)·인증(가칭 M4c) | WebSocket | Redis |
 | **M-MQTT** | **MQTT 수집 경로** | ✅ 수집+측정+개선 완결. 인입 병렬화(스레드+연결)로 3.25K→~9K(2.8배)·HTTP 천장 근접, 인입 병목 제거 | MQTT | Mosquitto |
 | **M3** | 추상화 검증(디바이스 타입) | ✅ 봉투 일반화 + AMR 추가로 core diff=enum 1줄+게이트 훅뿐 실증(engine·엔티티 불변). 폰 프라이버시 게이트 불변 | 양축 추상화 | — |
-| **M5** | 도달/이탈 판정(geofence) | 🔄 슬라이스1(엔진+CG+가시화, 브라우저 검증 대기) | — | (Redis Stream CG) |
+| **M5** | 도달/이탈 판정(geofence) | 🔄 슬라이스1 완료(엔진+CG+가시화, 브라우저 확인됨). 잔여: CRUD·영속·폴리곤·판정 처리량 측정 | — | (Redis Stream CG) |
 | **M6** | 민감정보 보호·보존 | ⬜ | — | (TimescaleDB retention) |
 | **M7** | 대용량 조회·복제 | ⬜ | — | (TimescaleDB 하이퍼테이블) |
 | **M8** | 컨테이너·**k8s** | 🔄 앱 이미지 + compose `app` 프로파일 완료(한 줄 기동). 잔여: CI 이미지 빌드·k8s | k8s | (앱 컨테이너화) |
@@ -186,13 +188,14 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 - [ ] WebSocket 실시간 push (지도 폴링 → push) ← **두 번째 소비자**(`monitoring` CG). 조직 스코프 구독, 오프라인 lastSeen 파생
 - [x] **stream poison 내성 (storage + monitoring 둘 다)** (2026-07-05) — payload null(MAXLEN 트림된 유령 pending)·손상 JSON 엔트리가 두 컨슈머를 망가뜨리던 버그. storage: 재시작 pending 회수에서 워커 스레드 사망. monitoring: 배치가 poison에서 중단돼 뒤 정상 메시지가 push·XACK 없이 PEL에 갇혀 starvation. 수정: `tryRead`가 던지지 않고 드롭(XACK+`locus.ingest.poison`·`locus.push.poison` 카운트), 좋은 엔트리만 처리 후 XACK(storage at-least-once 유지). 통합테스트 동반(실 Redis에 poison XADD→두 워커 생존+정상 적재·push 검증). CI가 monitoring 방치를 잡음(storage만 고친 1차 커밋에서 push 테스트 실패)
 - [ ] **(측정 미완) monitoring 컨슈머 1개 충분성** — storage=4는 fsync 병목으로 측정 증명(M2-par)이나, monitoring=1은 org 인메모리 캐시(`DeviceOrgResolver`)라 일이 가볍다는 **논증뿐 실측 없음**. 지속 10k에서 monitoring 그룹 lag(`XINFO GROUPS` / 스트림 last-id ↔ 그룹 last-delivered-id 간극)가 **유계인지 실측 필요**. 리스크: 콜드스타트 1만 첫조회 직렬 스파이크·캐시 미스 시 per-msg DB. 유계면 "1로 충분" 증명, 벌어지면 org 샤딩 신호
-- [🔄] **관제 화면 시각 개선(M4b-A 표시계층)** (2026-07-05, 브라우저 검증 대기) — **백엔드 변경 0**. push 페이로드에 이미 오는 `deviceType`+전체 metrics를 활용. 단일 `index.html`(위치·시각만) → 4파일 분리(`static/{index.html, css/app.css, js/render.js, js/app.js}`, 빌드 스텝 없음·바닐라·전역 `Locus`). 다크/라이트 **테마 토글**(HUD 버튼·localStorage) + 지도는 컬러 OSM 한 장에 **다크는 CSS 필터로 톤만 낮춤**(invert+hue-rotate, 색 유지·라벨 반전 가독성 — 회색 다크 타일은 색을 죽여 기각, 2026-07-05). 사이드바는 **제자리 갱신**(키 diff — 구조 변화 때만 재생성해 호버 깜빡임 제거). 마커 위치는 **프레임 보간**(단일 rAF 루프가 1초 간격을 latlng 공간에서 이어 끊김 없이, 큰 점프는 스냅). Leaflet **divIcon** 마커(모양=타입·색=상태·배터리 링·heading 방향, 시그니처 diff로 재렌더 억제) + 타입별 상세패널 + 사이드바(타입 그룹·경고 우선·클릭 포커스) + HUD(타입 카운트·경고·레이트·연결) + 스테일 흐림 + 타입/오프라인/estop/저배터리 필터 + 범례 + 렌더러 교체 이음새(canvas 대비). 계획 `plans/dapper-questing-gray.md`. 검증=시뮬 띄우고 브라우저 수동(자동테스트 없음, CI 무영향)
+- [x] **관제 화면 시각 개선(M4b-A 표시계층)** (2026-07-05 구현 · 2026-07-20 브라우저 확인) — **백엔드 변경 0**. push 페이로드에 이미 오는 `deviceType`+전체 metrics를 활용. 단일 `index.html`(위치·시각만) → 4파일 분리(`static/{index.html, css/app.css, js/render.js, js/app.js}`, 빌드 스텝 없음·바닐라·전역 `Locus`). 다크/라이트 **테마 토글**(HUD 버튼·localStorage) + 지도는 컬러 OSM 한 장에 **다크는 CSS 필터로 톤만 낮춤**(invert+hue-rotate, 색 유지·라벨 반전 가독성 — 회색 다크 타일은 색을 죽여 기각, 2026-07-05). 사이드바는 **제자리 갱신**(키 diff — 구조 변화 때만 재생성해 호버 깜빡임 제거). 마커 위치는 **프레임 보간**(단일 rAF 루프가 1초 간격을 latlng 공간에서 이어 끊김 없이, 큰 점프는 스냅). Leaflet **divIcon** 마커(모양=타입·색=상태·배터리 링·heading 방향, 시그니처 diff로 재렌더 억제) + 타입별 상세패널 + 사이드바(타입 그룹·경고 우선·클릭 포커스) + HUD(타입 카운트·경고·레이트·연결) + 스테일 흐림 + 타입/오프라인/estop/저배터리 필터 + 범례 + 렌더러 교체 이음새(canvas 대비). 계획 `plans/dapper-questing-gray.md`. 검증=시뮬 띄우고 브라우저 수동(자동테스트 없음, CI 무영향)
 ### 인증(별도 — 측정 주도 아님)
 - [ ] 인증/식별 (`app.auth`/`app.user`, 공통 Principal, Device≠User — [보류 결정](ROADMAP.md))
 - [ ] 디바이스 그루핑 권한 강제 (관리자↔조직 M:N, `GET /api/devices` 스코프 필터) ← 조직 데이터모델(`orgId`)은 M4a에서
 
 ## M5 — 도달/이탈 판정 엔진 (geofence)  🔄  보조
-슬라이스1(얇게+가시화, 2026-07-05, 브라우저 검증 대기) — 계획 `plans/dapper-questing-gray.md`, 스펙 [specs/M5-geofence.md](specs/M5-geofence.md).
+슬라이스1(얇게+가시화, 2026-07-05 구현 · 2026-07-20 브라우저 확인) — 계획 `plans/dapper-questing-gray.md`, 스펙 [specs/M5-geofence.md](specs/M5-geofence.md).
+검증 증적: 데모 GIF([docs/assets/locus-robots.gif](assets/locus-robots.gif), README 상단)에 시드 존 원·존 안팎 AMR·ENTER/EXIT 이벤트 피드가 찍혀 있다. 판정 자체는 `StreamGeofenceIntegrationTest`와 컨테이너 기동 측정(ENTER 44·EXIT 8, poison 0)으로 확인.
 - [x] **`core.engine` 판정(미션·타입 모름)** — `ReachEvaluator`(core.strategy 인터페이스, 지오펜스·미션 도달 공유) + `RadiusEvaluator`(haversine, `Math`만) + `ReachTransition`(core.domain, 순수 상태기계 ENTER/EXIT). ArchUnit green(core 격리 유지). 단위테스트 동반.
 - [x] **`geofence` Consumer Group** ([ADR 0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)) — `StreamGeofenceConsumer`(monitoring mirror·단일 워커·poison 내성, `$`부터). storage·monitoring 옆 3번째 소비자. `location==null`이면 스킵(§3.5). **시드 지오펜스 0이면 미가동**(불필요 소비·contention 방지 — no-zone 컨텍스트에서 poison 통합테스트 흔들던 것 수정). 통합테스트(zone 안팎→ENTER/EXIT 카운터).
 - [x] **상태 포트 + 시드 catalog** — `GeofenceStateStore`(ADR 0004) 인메모리 구현. 지오펜스는 DB 없이 config(`locus.geofence.seeded`)→`GeofenceCatalog`(org별). CRUD/영속은 이후.
@@ -206,7 +209,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 
 ## M7 — 대용량 조회 · 복제  ⬜  읽기경로
 - [ ] recorded_at **시간 파티셔닝** + 커서 페이징 (오래된 파티션 drop = 보존 삭제 비용 ≈ 0)
-- [ ] MySQL 읽기 복제 · 라우팅 데이터소스
+- [ ] PostgreSQL 읽기 복제 · 라우팅 데이터소스
 
 ## M8 — 컨테이너 · k8s  🔄  보조
 - [x] **Dockerfile(멀티스테이지) + compose `app` 서비스** (2026-08-11) — `docker compose --profile app up -d` 한 줄로 인프라+앱+시뮬레이터. 빌드 단계에서 bootJar → `jarmode=tools extract --layers`로 레이어 분해(의존성/앱 분리), 런타임은 JRE 이미지·비루트(uid 999)·actuator healthcheck. 앱을 `app` 프로파일 뒤에 둬 기본 `docker compose up -d`(측정용 인프라만)는 그대로 — 컨테이너 앱이 측정과 CPU를 나눠 쓰는 교란 방지. 앱 컨테이너의 자원 조건은 `scripts/run-app.sh`와 동일(코어 핀 `0-5`·`-Xms1500m -Xmx1500m`·G1GC). `cpuset` 기본값은 측정 baseline `0-5` 유지, `LOCUS_CPUSET`은 오버라이드 통로로만(Docker VM vCPU가 6개 미만일 때만 빈 값으로 푼다 — 그렇게 잰 값은 비교 불가)
@@ -224,4 +227,4 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 ## ❓ 미해결 결정 (확정 필요 — ADR 0007 §미해결)
 - [ ] raw telemetry **보존 기간(TTL) 수치** 확정 (M6)
 - [ ] **Mission Archive를 raw에서 어떻게 뽑나** — Stream 컨슈머 직접 적재 vs 배치 집계 (MissionType 설계와 엮임, 페이즈2)
-- [ ] 로봇 **Mission Archive 저장소** — MySQL 시계열 테이블 vs 별도 시계열/오브젝트 스토리지
+- [ ] 로봇 **Mission Archive 저장소** — TimescaleDB 하이퍼테이블 vs 별도 시계열/오브젝트 스토리지

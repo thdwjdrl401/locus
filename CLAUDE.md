@@ -13,7 +13,8 @@
 ## 1. 스택 / 빌드
 - Java 21, Spring Boot 3.4, **Gradle (Kotlin DSL)**. 빌드는 항상 `./gradlew`(wrapper, Gradle 8.11.1).
 - Java는 toolchain으로 **21 고정**. 다른 JVM에서 돌려도 컴파일 타깃은 21.
-- DB는 MySQL 8. 인프라는 `docker-compose`로 기동하되 **앱은 M8 전까지 호스트 JVM에서 직접 실행**한다(GC·힙 측정을 깨끗하게).
+- DB는 **TimescaleDB(PostgreSQL 16)**. M0~M1은 MySQL 8이었고 M2에서 전환했다(ADR 0008) — 측정 문서의 MySQL 서술은 그 시점 기록이다.
+- 인프라는 `docker-compose`로 기동한다. 앱은 두 경로가 있다: **측정은 호스트 JVM 직접 실행**(`scripts/run-app.sh` — GC·힙 측정을 깨끗하게), 데모·리뷰는 컨테이너(`docker compose --profile app up -d`). **측정 중에는 `--profile app`을 쓰지 않는다** — 컨테이너 앱이 같은 코어를 나눠 쓰면 교란변수가 된다.
 
 ## 2. 절대 깨면 안 되는 구조 규칙
 
@@ -58,7 +59,8 @@
 ### 3.3 과잉결정 금지 — 해당 마일스톤까지 미룬다
 - 지금 안 정해도 M0가 안 막히고 되돌리기가 싸면 **미룬다.** "마지막 책임 시점"에 정한다.
 - 미루는 결정은 `docs/ROADMAP.md`의 "보류된 결정" 표에 *결정 시점 + 가벼운 가드레일*만 적는다.
-- 현재 보류 중(요약): **인증·식별 = M4**. 방향만 — 인증/식별은 app 계층(core 아님), 보안 계층은 공통 `Principal`, 도메인은 `Device` ≠ `User`. 세부(JWT vs opaque·토큰 수명·enrollment)는 M4에서. **M0의 Device에 인증 필드 미리 넣지 말 것.**
+- 현재 보류 중(요약): **인증·식별 = 가칭 M4c 또는 늦어도 M6**(2026-07-03 시점 재설정 — M4 분해로 인증이 분리됨). 방향만 — 인증/식별은 app 계층(core 아님), 보안 계층은 공통 `Principal`, 도메인은 `Device` ≠ `User`. 세부(JWT vs opaque·토큰 수명·enrollment)는 그때. **Device에 인증 필드를 미리 넣지 말 것.**
+- 조직(`Device.orgId`)은 데이터 모델이라 M4a에서 확정했지만 **배정 주체는 아직 없다** — `locus.ingest.default-org`(기본 null)가 수집 시 생성되는 디바이스에 넣는 임시 손잡이다. enrollment가 이 자리를 대체한다.
 
 ### 3.4 인프라는 하나씩 (계획서 §11)
 - 한 마일스톤에 인프라 둘 이상 동시에 올리지 않는다. `docker-compose.yml`은 마일스톤별로 점증(M0=mysql, M2=kafka, M4=redis).

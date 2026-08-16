@@ -30,10 +30,10 @@
 | **M4** | **실시간: Redis 캐시 + WebSocket 푸시** ✅(잔여: 인증) ★WebSocket ([스펙](specs/M4-realtime-read-path.md)) | `app.telemetry`/`device`, `app.config(Redis/WebSocket)` | **Redis**(캐시+Streams fan-out, [0007](decisions/0007-messaging-storage-redis-streams-and-governance.md)) | `LatestStateLookup` |
 | **M-MQTT** | **MQTT 수집 경로** ✅ ★브로커 | `app.telemetry`(MQTT 수신 어댑터→기존 `IngestService` 합류) | **MQTT broker**(Mosquitto) | 수집 입구만 확장 |
 | **M3** | 추상화 검증(디바이스 타입) ✅ | 봉투 일반화(공통칸+metrics 자유칸)·게이트를 `DeviceTypeHandler.gate` 전략으로·AMR 추가(`app.device`/`app.simulator`). core diff=enum 1줄+게이트 훅 | — | — |
-| **M5** | 도달/이탈 판정 엔진 🔄(슬라이스1: 엔진+CG+가시화) | `core.engine`(ReachEvaluator/RadiusEvaluator/ReachTransition), `app.geofence`(신규) | (Redis Stream `geofence` CG) | `GeofenceStateStore` |
+| **M5** | 도달/이탈 판정 엔진 🔄(슬라이스1 완료: 엔진+CG+가시화. 잔여: CRUD·영속·폴리곤·판정 처리량) | `core.engine`(ReachEvaluator/RadiusEvaluator/ReachTransition), `app.geofence`(신규) | (Redis Stream `geofence` CG) | `GeofenceStateStore` |
 | **M6** | 민감정보 보호·보존 | `core.domain`(암호화), `app.support`(마스킹) | — (보존은 TimescaleDB retention 흡수, [0008](decisions/0008-telemetry-store-timescaledb.md)) | — |
 | **M7** | 대용량 조회·복제 | `app.telemetry`(커서), 라우팅DS | (파티셔닝은 TimescaleDB 하이퍼테이블 흡수) PostgreSQL 읽기복제 | — |
-| **M8** | 컨테이너·**k8s**(우대) | `Dockerfile`, k8s manifests | (앱 컨테이너화) | — |
+| **M8** | 컨테이너·**k8s**(우대) 🔄(앱 이미지+compose `app` 프로파일 완료, k8s 잔여) | `Dockerfile`(멀티스테이지), compose `app` 서비스, k8s manifests | (앱 컨테이너화) | — |
 | (보류) | 인증/식별 | `app.auth`/`app.user` | — | (보류표) |
 
 ## 페이즈 2 — 미션 (다운링크)

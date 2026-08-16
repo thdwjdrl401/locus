@@ -282,7 +282,7 @@ export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 - ✅ **M-MQTT** IoT 표준 수집 경로 (3.25K → ~9K)
 - ✅ **M3** 추상화 검증 — 타입 추가에 core diff 0
 - ✅ **M-e2e-soak** 전 구간 통합 소크 60분+ 무손실
-- 🔄 **M5** 지오펜스 판정 엔진(`core.engine` — 슬라이스1 구현, 검증 중)
+- 🔄 **M5** 지오펜스 판정 엔진(`core.engine`) — 슬라이스1 완료(위 데모가 그 결과). 잔여: 존 CRUD·영속·폴리곤·판정 처리량 측정
 - 🔄 **M8** 컨테이너 — 앱 이미지 + compose 한 줄 실행까지. k8s는 남음
 - ⬜ **M6** 민감정보 보호·보존 · **M7** 대용량 조회·복제 · (페이즈2) 명령 다운링크·정합성
 
