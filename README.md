@@ -194,30 +194,60 @@ fresh 볼륨 함대 스윕(1 VU = 1 디바이스 1Hz)으로 인입 상한 규명
 
 ## 빠른 시작
 
+전체 스택을 한 줄로 띄웁니다. Docker만 있으면 되고 JDK는 필요 없습니다.
+
 ```bash
-# 0) (선택) 로컬 환경변수 — 기본값으로도 동작
-cp .env.example .env
-
-# 1) 인프라 기동 (TimescaleDB + Redis + Mosquitto + node-exporter)
-docker compose up -d
-
-# 2) 앱 실행 (호스트 JVM에서 직접 — M8 전까지)
-./gradlew bootRun
-#    프로덕션 인입 경로(Redis Streams)로 실행하려면:
-#    SPRING_PROFILES_ACTIVE=stream ./gradlew bootRun
-
-# 3) 시뮬레이터로 가상 디바이스 전송 (폰 + AMR 혼합)
-./gradlew bootRun --args='--spring.profiles.active=simulator'
-
-# 4) 단위 + 웹 테스트 (빠름, Docker 불필요)
-./gradlew test
-
-# 5) 통합 테스트 (Testcontainers 실 PostgreSQL·Redis, Docker 필요)
-./gradlew check
+docker compose --profile app up -d
 ```
 
-- 앱: http://localhost:8093 · 메트릭: http://localhost:8093/actuator/prometheus
-- 관제 지도: http://localhost:8093 (Leaflet, WebSocket push — 타입별 마커·상태·지오펜스 이벤트)
+인프라(TimescaleDB·Redis·Mosquitto) + 앱 + 시뮬레이터가 함께 뜹니다. 20초쯤 뒤 <http://localhost:8093>을 열면 폰 40대·로봇 10대가 1Hz로 움직이고, 로봇이 작업구역 경계를 넘을 때 지오펜스 ENTER/EXIT가 뜹니다.
+
+```bash
+docker compose --profile app logs -f app   # 앱 로그
+docker compose --profile app down -v       # 정리 (-v = DB 볼륨까지)
+```
+
+- 관제 지도: <http://localhost:8093> (Leaflet, WebSocket/STOMP push — 타입별 마커·상태·지오펜스 이벤트)
+- 메트릭: <http://localhost:8093/actuator/prometheus>
+
+앱 컨테이너는 측정 경로(`scripts/run-app.sh`)와 같은 자원 조건으로 뜹니다 — 코어 핀 `0-5`, 힙 고정 `-Xms1500m -Xmx1500m`, G1GC. 기록된 측정은 호스트 JVM에서 잰 값이지만 설정이 갈려 값이 어긋나지는 않게 맞춰 뒀습니다.
+
+<details>
+<summary>포트·CPU가 겹칠 때</summary>
+
+기본 포트(5432·6379·1883·8093)가 이미 쓰이고 있으면 `.env`로 옮깁니다.
+
+```bash
+cp .env.example .env   # DB_HOST_PORT / REDIS_HOST_PORT / MQTT_HOST_PORT / APP_HOST_PORT 수정
+```
+
+CPU 핀은 기본이 `0-5`입니다 — 측정 기록과 같은 조건을 재현하기 위한 값이라 그대로 두면 됩니다. 여기서 세는 건 호스트의 코어 수가 아니라 **Docker VM에 할당된 vCPU 수**입니다(macOS·Windows는 VM 안에서 돕니다). 6개 미만이면 `Requested CPUs are not available`로 기동이 실패하므로 VM 할당을 올립니다.
+
+```bash
+colima stop && colima start --cpu 8 --memory 8   # colima
+# Docker Desktop: Settings → Resources → CPUs 8 이상
+```
+
+VM 자원을 늘릴 수 없을 때만 `.env`에 `LOCUS_CPUSET=`(빈 값)을 넣어 핀을 풉니다. 핀을 푼 환경에서 잰 값은 기록된 측정과 비교할 수 없습니다.
+</details>
+
+<details>
+<summary>호스트 JVM으로 실행 (측정 경로)</summary>
+
+기록된 측정은 모두 호스트 JVM에서 잰 값입니다(GC 로그·taskset, [RUNBOOK](docs/measurements/RUNBOOK.md)). 이 경로로 실행할 때는 `--profile app` 없이 인프라만 띄웁니다 — 컨테이너 앱이 같이 뜨면 같은 코어를 나눠 써 교란변수가 됩니다.
+
+```bash
+docker compose up -d                                  # 인프라만
+./gradlew bootRun                                     # 기본(direct 적재)
+SPRING_PROFILES_ACTIVE=stream ./gradlew bootRun       # 프로덕션 인입 경로(Redis Streams)
+./gradlew bootRun --args='--spring.profiles.active=simulator'   # 가상 디바이스 전송
+```
+</details>
+
+```bash
+./gradlew test    # 단위 + 웹 테스트 (빠름, Docker 불필요)
+./gradlew check   # + 통합 테스트 (Testcontainers 실 PostgreSQL·Redis·Mosquitto)
+```
 
 <details>
 <summary>통합 테스트 로컬 실행 시 colima 설정</summary>
@@ -253,6 +283,7 @@ export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 - ✅ **M3** 추상화 검증 — 타입 추가에 core diff 0
 - ✅ **M-e2e-soak** 전 구간 통합 소크 60분+ 무손실
 - 🔄 **M5** 지오펜스 판정 엔진(`core.engine` — 슬라이스1 구현, 검증 중)
-- ⬜ **M6** 민감정보 보호·보존 · **M7** 대용량 조회·복제 · **M8** 컨테이너·k8s · (페이즈2) 명령 다운링크·정합성
+- 🔄 **M8** 컨테이너 — 앱 이미지 + compose 한 줄 실행까지. k8s는 남음
+- ⬜ **M6** 민감정보 보호·보존 · **M7** 대용량 조회·복제 · (페이즈2) 명령 다운링크·정합성
 
 > 목표 SLO와 전체 마일스톤은 [ROADMAP](docs/ROADMAP.md)에 있습니다. 측정 근거 없이 기능을 늘리지 않고, 각 단계를 before/after로 정당화합니다.

@@ -6,10 +6,11 @@
 
 ---
 
-## 현재 포커스 — 전 구간 통합 소크 완료(M-e2e-soak: 무손실 + 천장 규명) · M5 지오펜스(브라우저 검증 대기) · device 데모션 재검토(perf 명분 소멸 → refactor/M4c)
+## 현재 포커스 — 포트폴리오 공개 정비: 컨테이너화(M8 선행) 완료 · 다음은 문서 상태 정리 → 인증 → OpenAPI
 
 | | |
 |---|---|
+| **✅ 컨테이너화 (2026-08-11)** | **`docker compose --profile app up -d` 한 줄로 인프라+앱+시뮬레이터 기동.** 멀티스테이지 `Dockerfile`(레이어 분해 `jarmode=tools`·비루트 uid 999·actuator healthcheck), compose `app` 서비스(`app` 프로파일 뒤 — 기본 `up -d`는 인프라만이라 **측정 경로(호스트 JVM) 불변**). **앱 컨테이너의 자원 조건을 `scripts/run-app.sh`와 동일하게**: 코어 핀 `0-5`·힙 고정 `-Xms1500m -Xmx1500m`·G1GC — 컨테이너로 띄운 값이 기록된 측정과 어긋나지 않게. `cpuset`은 `LOCUS_CPUSET`으로 오버라이드만 열되 **기본값은 측정 baseline `0-5` 유지** — 개발 머신이 부족하면 핀을 푸는 게 아니라 Docker VM vCPU를 올리는 게 먼저다(macOS/Windows는 호스트 코어가 아니라 VM 할당이 기준: `colima start --cpu 8 --memory 8`). 검증: 맥 colima를 4→8 vCPU·8GiB로 올려 **오버라이드 없이 기본 `0-5` 적용 확인**(app·db·redis·mosquitto 전부 cpuset=0-5, JVM `-Xms1500m -Xmx1500m -XX:+UseG1GC`), 신규 볼륨에서 org-0 조회 50대(폰40·AMR10)·push≈적재·지오펜스 ENTER 44/EXIT 8·poison 0. |
 | **🔄 재검토 (2026-07-09)** | **device 핫라이트 데모션** — 적재가 텔레메트리마다 `device` 행을 UPDATE(`last_seen`·`status`)하던 걸 **insert-if-absent로 강등**(두 write 경로 `DO UPDATE`→`DO NOTHING`, 코드·테스트 green, **미커밋**). **근거 재평가**: 트리거였던 disk-baseline "sync 지연 병목"은 naive regime 한정이고 배치 SLO 운영점은 **CPU 바운드**([M-http-capacity](measurements/M-http-capacity.md) — device upsert 켠 채 12–16K 도달·디스크 68% 여유) → **perf 명분 소멸**(처리량·autovacuum 측정해도 차이 ~0이라 측정 안 함). **남은 명분은 구조**: registry↔live-state 분리 + M4 스펙 "status=파생" 이행 + status ONLINE-only 버그. → `perf:` 아닌 **`refactor:`로, 또는 read 파생·컬럼삭제와 함께 M4c로 접기** 검토 중(리스크 [R5a](RISKS.md)와 동일 지점 — 등록부는 "수용·낮음"). |
 | **한 줄** | **M3 완료(2026-07-04)**: 수집 봉투를 디바이스 무관하게 재설계(공통칸 + `metrics` JSONB 자유칸)하고 최소수집 게이트를 `DeviceTypeHandler.gate()` 전략으로 옮긴 뒤, 둘째 타입 `AMR`을 추가해 **새 타입 추가 시 core diff = enum 값 1줄 + 게이트 훅 1개뿐**(engine·엔티티 불변)임을 실증. AMR 동작(검증·시뮬·metrics)은 전부 app. 폰 프라이버시 게이트는 동작 불변(테스트로 못박음). 단위·ArchUnit green(60 tests). 통합테스트는 로컬 Docker 미기동으로 컴파일까지 확인. |
 | **직전 측정 (M-e2e-soak, 2026-07-12)** | **전 구간 60분+ 무손실**(HTTP→Redis Streams→TimescaleDB). 양끝 정산 k6 발신 38,616,836 ≈ 스트림 수신 38,617,038, storage/monitoring lag·pending·poison 0. 지속 천장 = **단일 맥 부하기**(load 11.47>코어·sys 35%·램 고갈), 서버는 여유(p95 24ms·disk 70%) → "9.7k"의 원인 규명(파이프라인 아님). 가상 스레드는 회귀로 기각(무제한 admission이 공유 직렬화 지점 과부하). 상세 [measurements/M-e2e-soak.md](measurements/M-e2e-soak.md). |
@@ -44,6 +45,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 
 | 날짜 | 결정 | 어디에 |
 |---|---|---|
+| 2026-08-11 | **컨테이너는 측정 설정을 그대로 따른다** — 앱 컨테이너의 코어 핀·힙·GC를 `scripts/run-app.sh`와 동일하게(`0-5`·`-Xms1500m -Xmx1500m`·G1GC). 컨테이너로 재현했는데 설정이 달라 값이 어긋나면 재현의 의미가 없다. `cpuset` 기본값은 측정 baseline `0-5` 유지하고 `LOCUS_CPUSET`은 오버라이드 통로로만(CPU 6개 미만 환경 전용, 그렇게 잰 값은 비교 불가로 명시). 실행 경로는 분리: 기본 `docker compose up -d`=인프라만(측정, 앱은 호스트 JVM), `--profile app`=전체 기동 — 측정 중 컨테이너 앱이 같이 뜨면 같은 코어를 나눠 써 교란변수가 된다 | `Dockerfile`, `docker-compose.yml`, `.env.example`, README |
 | 2026-07-13 | **표현 규칙 전수 정비(conventions §7)** — 전체 md 38개 점검(3에이전트 + 금지어 grep 교차) 후 공개 문서의 규칙 위반 일괄 수정: 비유 "천장"(→최대 처리량·한계, 22곳: M-http-capacity 제목 포함)·"벽"(→병목, 13곳), 과장 "재앙"(RUNBOOK)·"훌륭"(M2-sustain), 자기평가 라벨 "측정 정직성"(disk-baseline→재현 확인), 구어 "갔다"(ADR 0008)·"못 버틸 때"(ADR 0007·ROADMAP), 조어 "유령"(M4 스펙→잔류 엔트리)·"잔가지"(RISKS R5→경미한 위험), "묻어가다"(→포함, 3곳). 제외: STATUS 과거 로그 행(이력 보존)·conventions/CLAUDE(규칙 예문). 에이전트 과잉 플래그(두괄식 결론 제목·오판 정정 기록·"조용한 유실"=silent loss 표준 표현)는 위반 아님으로 기각 | README, measurements/{M-http-capacity,M-e2e-soak,M-MQTT,M4b,disk-baseline,M2-sustain,RUNBOOK,README,M-MQTT-raw}, ADR 0007·0008, ROADMAP, RISKS, specs/M4 |
 | 2026-07-13 | **문서 정비(외부 독자 점검)** — README 링크 문서 전수 점검(깨진 링크 0·수치 불일치 0 확인) 후 낡은 서술 일괄 수정: ROADMAP SLO 표 "현재" 열(1,437→10k 달성)·마일스톤 마커, M-MQTT 상태 헤더(측정 예정→완료+결과 요약), measurements/README 인덱스 현행화(1개→12개), SECURITY 인증(M4 구현→보류), RISKS R3 출처·R4 워커 수(12→4 기본), "계획서" 참조에 비공개 문서 각주, 조어("유령")·의인화("거짓말") 제거, M-e2e-soak에 PromQL 재현 표 추가, README mermaid 다이어그램 교체+geofence→push 간선. 잔여(별도): PERFORMANCE 서사 M-MQTT 이후 3단 추가, STRUCTURE 트리 M5 반영 | README, ROADMAP, STRUCTURE, RISKS, SECURITY, ADR 0004·0005, measurements/{README,M-MQTT,M4b,disk-baseline,M-e2e-soak} |
 | 2026-07-12 | **README 전면 갱신(포트폴리오 공개 대비)** — M1 시점(MySQL·44배 고정, TimescaleDB/Redis/MQTT=로드맵 표기)에 멈춰 있던 것을 현재 상태로: 헤드라인=전 구간 60분+ 무손실 + 적재 개선 기록 표(33→1,437→10k), 측정 기록을 시간순 `<details>`(summary=결론, 본문=근거)로, 스택·빠른시작·로드맵 현행화 | `README.md` |
@@ -94,7 +96,7 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 | **M5** | 도달/이탈 판정(geofence) | 🔄 슬라이스1(엔진+CG+가시화, 브라우저 검증 대기) | — | (Redis Stream CG) |
 | **M6** | 민감정보 보호·보존 | ⬜ | — | (TimescaleDB retention) |
 | **M7** | 대용량 조회·복제 | ⬜ | — | (TimescaleDB 하이퍼테이블) |
-| **M8** | 컨테이너·**k8s** | ⬜ | k8s | (앱 컨테이너화) |
+| **M8** | 컨테이너·**k8s** | 🔄 앱 이미지 + compose `app` 프로파일 완료(한 줄 기동). 잔여: CI 이미지 빌드·k8s | k8s | (앱 컨테이너화) |
 | **M9~M11** | 페이즈2(다운링크/미션) | ⏸ | 정합성 | — |
 
 ---
@@ -203,8 +205,9 @@ Device ─HTTP/MQTT→ [수집/배치] → TimescaleDB 하이퍼테이블 (순�
 - [ ] recorded_at **시간 파티셔닝** + 커서 페이징 (오래된 파티션 drop = 보존 삭제 비용 ≈ 0)
 - [ ] MySQL 읽기 복제 · 라우팅 데이터소스
 
-## M8 — 컨테이너 · k8s  ⬜  보조
-- [ ] Dockerfile · 이미지 빌드(CI) → 컨테이너화 비용 before/after
+## M8 — 컨테이너 · k8s  🔄  보조
+- [x] **Dockerfile(멀티스테이지) + compose `app` 서비스** (2026-08-11) — `docker compose --profile app up -d` 한 줄로 인프라+앱+시뮬레이터. 빌드 단계에서 bootJar → `jarmode=tools extract --layers`로 레이어 분해(의존성/앱 분리), 런타임은 JRE 이미지·비루트(uid 999)·actuator healthcheck. 앱을 `app` 프로파일 뒤에 둬 기본 `docker compose up -d`(측정용 인프라만)는 그대로 — 컨테이너 앱이 측정과 CPU를 나눠 쓰는 교란 방지. 앱 컨테이너의 자원 조건은 `scripts/run-app.sh`와 동일(코어 핀 `0-5`·`-Xms1500m -Xmx1500m`·G1GC). `cpuset` 기본값은 측정 baseline `0-5` 유지, `LOCUS_CPUSET`은 오버라이드 통로로만(Docker VM vCPU가 6개 미만일 때만 빈 값으로 푼다 — 그렇게 잰 값은 비교 불가)
+- [ ] 이미지 빌드를 CI에 추가 → 컨테이너화 비용 before/after
 - [ ] (선택) CD 자동화는 마일스톤 밖 — [보류 결정](ROADMAP.md)
 
 ## 페이즈 2 (다운링크/미션) — M9~M11  ⏸

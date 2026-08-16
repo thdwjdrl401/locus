@@ -1,0 +1,27 @@
+# 이미지 빌드 컨텍스트에서 뺄 것 — 전송량·캐시 무효화를 줄인다.
+.git
+.github
+.githooks
+.gradle
+.omc
+build
+bin
+logs
+*.hprof
+
+# 비밀·로컬 설정 (이미지에 절대 들어가면 안 됨 — SECURITY.md)
+.env
+
+# 앱 실행에 불필요한 자산
+docs
+load
+monitoring
+scripts
+.env.example
+CLAUDE.md
+README.md
+SECURITY.md
+docker-compose*.yml
+Dockerfile
+.dockerignore
+.DS_Store

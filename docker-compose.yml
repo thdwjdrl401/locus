@@ -1,4 +1,4 @@
-# SUT(타깃 박스)의 의존 인프라. 앱은 M8 전까지 호스트 JVM에서 직접 실행한다.
+# SUT(타깃 박스)의 의존 인프라 + (선택) 앱 컨테이너.
 # 관측 스택(prometheus/grafana)은 박스 밖(맥북)에서 → docker-compose.monitoring.yml.
 #
 # 점증 원칙: 한 마일스톤에 파이프라인 인프라 둘 이상 동시에 올리지 않는다.
@@ -6,7 +6,11 @@
 #   M4: redis  ← 해당 마일스톤에서 추가
 #   M-MQTT: mosquitto (MQTT 수집 브로커, ADR 0007 — Redis Streams와 다른 계층)
 #
-# 기동: docker compose up -d
+# 두 가지 기동 경로:
+#   docker compose up -d                  인프라만. 앱은 호스트 JVM(scripts/run-app.sh) — 측정 경로.
+#   docker compose --profile app up -d    인프라 + 앱 + 시뮬레이터. 데모·리뷰 경로.
+# 앱을 `app` 프로파일 뒤에 둔 이유: 측정 시 컨테이너 앱이 같이 떠서 CPU를 나눠 쓰면 교란변수가 된다.
+#
 # 버전 고정(재현성): 측정이 비교 가능하려면 떠다니는 태그를 쓰지 않는다.
 
 services:
@@ -23,9 +27,12 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     # Locus를 박스의 ≈3/4로 격리(시스템 서비스+OS에 1/4 예약). 8c 중 0–5, 메모리 3G 상한.
-    # 앱(호스트 JVM)은 taskset -c 0-5 + -Xmx1500m로 같은 경계 안. 합 ≈ 6G ≤ 8G(스왑 회피).
-    cpuset: "0-5"
-    mem_limit: 3g
+    # 앱은 taskset -c 0-5(호스트 JVM) 또는 app 서비스의 cpuset(컨테이너) + -Xmx1500m로 같은 경계 안.
+    # 합 ≈ 6G ≤ 8G(스왑 회피).
+    # 기본값 0-5 = M0 이후 모든 측정의 baseline. 그대로 두는 게 재현 조건이다.
+    # CPU가 6개 미만인 환경에서만 .env에 LOCUS_CPUSET=(빈 값)으로 핀을 푼다 — 그 경우 측정값은 비교 불가.
+    cpuset: "${LOCUS_CPUSET-0-5}"
+    mem_limit: ${LOCUS_DB_MEM:-3g}
     # 측정 튜닝: shared_buffers를 M0/M1의 MySQL buffer-pool 2G와 맞춰 비교 가능하게(엔진 외 변수 고정).
     # shared_preload_libraries=timescaledb는 확장 로드 보장(Flyway CREATE EXTENSION 전제).
     command:
@@ -48,7 +55,7 @@ services:
     container_name: locus-redis
     ports:
       - "${REDIS_HOST_PORT:-6379}:6379"
-    cpuset: "0-5"
+    cpuset: "${LOCUS_CPUSET-0-5}"
     mem_limit: 512m
     command: redis-server --save "" --appendonly no --maxmemory 256mb --maxmemory-policy noeviction
     healthcheck:
@@ -66,7 +73,7 @@ services:
       - "${MQTT_HOST_PORT:-1883}:1883"
     volumes:
       - ./docker/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-    cpuset: "0-5"
+    cpuset: "${LOCUS_CPUSET-0-5}"
     # 1만 커넥션 = 소켓 1만 개 = FD 1만+. 컨테이너 기본 nofile(~1024)이면 그 위는 tcp_closed로 거절된다.
     # (발행자 emqtt-bench는 docker run --ulimit로 별도 상향 — 양쪽 다 풀어야 SLO 1만이 붙는다.)
     ulimits:
@@ -80,6 +87,40 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # 앱 컨테이너 (M8 선행). `app` 프로파일에서만 뜬다 — 측정(호스트 JVM)과 섞이지 않게.
+  #   실행: docker compose --profile app up -d   → http://localhost:8093
+  # 기본 프로파일 stream,simulator = 프로덕션 인입 경로(Redis Streams) + 가상 디바이스 50대.
+  # 인프라만 필요하면 APP_PROFILES=stream으로 시뮬레이터를 뺀다.
+  app:
+    profiles: ["app"]
+    build:
+      context: .
+    image: locus-app:local
+    container_name: locus-app
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: ${APP_PROFILES:-stream,simulator}
+      # 컨테이너 네트워크에선 호스트가 아니라 서비스 이름으로 붙는다.
+      DB_URL: jdbc:postgresql://timescaledb:5432/${POSTGRES_DB:-locus}?reWriteBatchedInserts=true
+      DB_USERNAME: ${POSTGRES_USER:-locus}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-locuspw}
+      REDIS_HOST: redis
+      # MQTT는 기본 꺼짐(MQTT_ENABLED=false). 켤 땐 MQTT_ENABLED=true — 브로커 주소는 아래로 이미 맞춰둠.
+      MQTT_URL: tcp://mosquitto:1883
+      # 자원 조건을 scripts/run-app.sh와 같게 — 컨테이너로 띄운 값이 측정값과 달라지지 않도록.
+      # 힙 고정(-Xms=-Xmx)·G1까지 동일. GC 로그는 측정 세션에서 JAVA_OPTS로 덧붙인다.
+      JAVA_OPTS: ${JAVA_OPTS:--Xms1500m -Xmx1500m -XX:+UseG1GC}
+    ports:
+      - "${APP_HOST_PORT:-8093}:8093"
+    # 호스트 JVM 실행과 같은 경계: CPU는 taskset -c 0-5와 같은 코어 핀, 메모리는 힙 1.5G + 비힙 여유.
+    cpuset: "${LOCUS_CPUSET-0-5}"
+    mem_limit: ${LOCUS_APP_MEM:-1800m}
+    restart: unless-stopped
 
   # 호스트(박스) 메트릭 노출 — 디스크 %util·쓰기 지연·평균 요청 크기 등을 9100으로.
   # 측정 시 iostat 로그 대신 Prometheus가 긁어 Grafana로 본다. (관측 사이드카 — 파이프라인 인프라 아님, §3.4 무관)
