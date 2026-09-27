@@ -1,289 +1,852 @@
-# Locus — 실시간 디바이스 텔레메트리 수집·처리 파이프라인
+# Locus : 실시간 디바이스 텔레메트리 수집·처리 파이프라인
 
-물리 디바이스(폰·로봇·센서·장비)가 위치·상태를 실시간으로 올리고, 한 명이 다수를 모니터링하는 백본입니다.
-디바이스를 추상화해서 폰(`PHONE`)·로봇(`AMR`)은 같은 코어를 공유하는 구체 타입일 뿐이고 코어는 디바이스 종류를 모릅니다. 새 타입을 더해도 판정 엔진·엔티티는 불변입니다(M3에서 AMR 추가로 검증 — 아래 데모의 로봇이 그 둘째 타입). 어떤 물리 객체든 같은 파이프라인으로 수집·반영합니다.
+폰, 로봇, 센서처럼 지속적으로 상태를 보내는 디바이스의 텔레메트리를 수집하고 저장하는 프로젝트입니다.
 
-> IoT·디지털 트윈 맥락의 텔레메트리 백본입니다. 구체 적용 예: 현장학습 인솔 교사가 다수 학생 단말의 위치·상태를 실시간으로 모니터링.
+HTTP와 MQTT로 데이터를 받고 Redis Streams를 거쳐 TimescaleDB에 저장합니다. 저장된 위치와 상태는 WebSocket을 통해 관제 화면에 전달하며, 지오펜스 진입/이탈도 실시간으로 판정합니다.
 
-이 프로젝트는 추측이 아니라 측정으로 판단합니다. 가장 단순한 구현에서 시작해 부하로 한계를 재현하고, 병목을 확인하고, 개선 후 재측정합니다. 효과 없던 시도도 기록합니다.
+처음에는 단건 저장으로 구현한 뒤 부하를 걸어 병목을 하나씩 확인했습니다. 배치 적재, 저장소 변경, 워커 병렬화, 쿼리 변경 등을 적용하면서 처리량과 지연이 어떻게 달라지는지 측정했습니다.
 
 ---
 
-## 데모 — 실시간 관제
+## 데모 - 실시간 관제
 
 | 실시간 위치 관제 (폰) | 지오펜스 판정 (로봇 순찰) |
 |---|---|
 | ![실시간 관제 지도](docs/assets/locus-phones.gif) | ![지오펜스 ENTER/EXIT](docs/assets/locus-robots.gif) |
 
-시뮬레이터가 폰·로봇 50대를 섞어 1Hz로 텔레메트리를 흘리고, 웹 지도가 WebSocket으로 실시간 반영합니다. 로봇이 작업구역 경계를 넘나들면 지오펜스 ENTER/EXIT가 판정돼 이벤트로 표시됩니다.
+시뮬레이터가 폰과 로봇 50대를 섞어 1Hz로 텔레메트리를 전송합니다. 웹 지도에는 위치가 WebSocket으로 실시간 반영되며, 로봇이 작업구역 경계를 통과하면 지오펜스 ENTER/EXIT 이벤트가 표시됩니다.
+
+---
 
 ## 핵심 결과
 
-**단일 노후 박스(4코어·8GB·5400rpm HDD)에서, 1만 대 디바이스가 1초에 한 건씩 보내는 텔레메트리를 전 구간(HTTP → Redis Streams → TimescaleDB)에서 60분 이상 유실 없이 처리.** 보낸 쪽(k6 발신 38,616,836건) ≈ 받은 쪽(스트림 수신 38,617,038건) ≈ 저장한 쪽(미확인·포이즌 0)을 정산해 확인했습니다 — [M-e2e-soak](docs/measurements/M-e2e-soak.md).
+**단일 머신(4코어·8GB·5400rpm HDD)에서 1만 대 디바이스가 1초에 한 건씩 보내는 텔레메트리를 HTTP → Redis Streams → TimescaleDB 전체 구간에서 60분 이상 유실 없이 처리했습니다.**
 
-여기까지의 적재 경로 개선 기록:
+k6 발신량 38,616,836건, Redis Streams 수신량 38,617,038건, 미확인·포이즌 메시지 0건을 함께 확인했습니다.
 
-| 단계 | 적재 처리량 | 병목 → 개선 |
-|---|---|---|
-| M0 단건 insert | 33 req/s | 커밋당 HDD fsync (측정으로 확증) |
-| M1 배치 적재 | 1,437 req/s (**~44×**) | 요청당 fsync 1.2 → 0.06, 내구성 유지 |
-| M2 TimescaleDB 전환 | 5,459 rows/s (~3.8×) | InnoDB 랜덤 쓰기 → 하이퍼테이블 순차 쓰기 |
-| M2-par 워커 병렬화 | **10,000 rows/s 무손실** | 단일 배치 워커 → N 워커 그룹 커밋 |
-| M-e2e-soak 통합 소크 | 1만 대 × 1Hz, 60분+ 무손실 | 남은 한계 = 부하 생성기 (서버 p95 24ms 여유) |
+상세: [M-e2e-soak](docs/measurements/M-e2e-soak.md)
 
-읽기 경로는 쿼리 재설계(상관 서브쿼리 → `LATERAL`)로 관제 조회 p95 8.65s → 35ms(**~250×**) — [M4a](docs/measurements/M4a.md).
+### 적재 경로 개선
 
-> 절대수치는 이 박스 종속입니다. 결론은 before/after 비율과 병목 귀속입니다.
+| 단계 | 적재 처리량 | 변경 내용 |
+|---|---:|---|
+| M0 단건 INSERT | 33 req/s | 요청마다 INSERT와 COMMIT 수행 |
+| M1 배치 적재 | 1,437 req/s | 여러 요청을 모아 다중 행 INSERT |
+| M2 TimescaleDB 전환 | 5,459 rows/s | 시계열 적재에 맞게 저장소 변경 |
+| M2-par 워커 병렬화 | 10,000 rows/s | 단일 배치 워커를 여러 워커로 분리 |
+| M-e2e-soak 통합 테스트 | 1만 대 × 1Hz, 60분+ | 전체 파이프라인 장시간 테스트 |
+
+읽기 경로는 디바이스별 최신 상태 조회 쿼리를 상관 서브쿼리에서 `LATERAL` 방식으로 변경해 p95를 8.65초에서 35ms로 줄였습니다.
+
+상세: [M4a](docs/measurements/M4a.md)
+
+> 절대 처리량은 테스트 머신의 하드웨어와 설정에 영향을 받습니다. 각 단계에서는 같은 환경에서 변경 전후를 비교했습니다.
 
 ---
 
-## 아키텍처
+## 처리 흐름
 
 ```mermaid
 flowchart LR
-    DEV["디바이스<br/>PHONE · AMR"]
-    MQ["Mosquitto<br/>(MQTT 브로커)"]
-    IN["수집·검증<br/>(Spring Boot)"]
-    ST[("Redis Streams<br/>telemetry.stream")]
-    DB[("TimescaleDB 하이퍼테이블<br/>5분 청크 · retention 12h")]
-    WS["WebSocket/STOMP push"]
-    MAP["관제 지도"]
-    GF["도달/이탈 판정<br/>(core.engine)"]
+    DEV["Device"]
+    APP["Spring Boot"]
+    RS[("Redis Streams")]
 
-    DEV -->|HTTP| IN
-    DEV -->|MQTT| MQ --> IN
-    IN -->|XADD| ST
-    ST -->|"storage 컨슈머 그룹 (워커 N)"| DB
-    ST -->|"monitoring 컨슈머 그룹"| WS --> MAP
-    ST -->|"geofence 컨슈머 그룹"| GF -->|"판정 이벤트"| WS
+    STORAGE["storage consumer group"]
+    MONITORING["monitoring consumer group"]
+    GEOFENCE["geofence consumer group"]
+
+    DB[("TimescaleDB")]
+    WS["WebSocket / STOMP"]
+    MAP["관제 화면"]
+    GF["Geofence Engine"]
+
+    DEV -->|"HTTP / MQTT"| APP
+    APP -->|XADD| RS
+
+    RS --> STORAGE --> DB
+    RS --> MONITORING --> WS --> MAP
+    RS --> GEOFENCE --> GF
 ```
 
-- 수집 전송 = HTTP + MQTT(다른 계층, 공존) · fan-out = Redis Streams 컨슈머 그룹 · 저장 = TimescaleDB.
-- 컨슈머는 at-least-once(적재 성공 후에만 `XACK`) + 포이즌 내성(손상 엔트리는 드롭·카운트, 워커는 생존).
-- 중복은 저장 계층이 멱등 흡수(`ON CONFLICT (device_id, recorded_at)`).
+| 구간 | 처리 내용 |
+|---|---|
+| 수집 | HTTP와 MQTT로 들어온 텔레메트리를 Spring Boot에서 같은 처리 경로로 받아 Redis Streams에 적재합니다. |
+| 저장 | `storage` Consumer Group이 메시지를 읽어 TimescaleDB에 저장합니다. 저장 완료 후에만 `XACK`합니다. |
+| 중복 처리 | 같은 메시지가 다시 처리될 수 있으므로 `(device_id, recorded_at)` UNIQUE 제약조건과 `ON CONFLICT`로 중복 저장을 막습니다. |
+| 실시간 관제 | `monitoring` Consumer Group이 메시지를 읽어 WebSocket/STOMP로 관제 화면에 전달합니다. |
+| 지오펜스 | `geofence` Consumer Group이 위치를 읽어 ENTER/EXIT를 판정합니다. |
 
 ---
 
-## 측정 기록 (시간순)
+## 측정 기록
 
-각 단계는 *문제 상황 → 변경 → 측정 → 해석* 순서의 측정 문서와 원본 데이터를 남깁니다. 요약만 보려면 접힌 제목줄만 읽으면 됩니다.
+각 단계의 상세 조건과 원본 로그는 [`docs/measurements`](docs/measurements/)에 정리했습니다.
+
+---
 
 <details>
-<summary><b>M0 — baseline: 단건 insert 33 req/s, 병목 = HDD fsync</b> (2026-06)</summary>
+<summary><b>M0 - 단건 INSERT 33 req/s</b></summary>
 
-가장 단순한 구현(요청 1건 = 트랜잭션 1개 = 커밋 1번)의 최대 처리량을 쟀습니다. 포화점 ~33 req/s.
+<br>
 
-병목이 HDD fsync임을 세 지표로 확증: CPU 유휴(2~8%) + HikariCP 커넥션 대기 적체(pending ~190) + 디스크 %util 97%. 계산과도 일치합니다 — fsync 한계 ~40회/s ÷ 요청당 ~1.2회 ≈ 33. 풀·JVM 튜닝은 무효(커넥션을 늘려도 같은 fsync에서 대기)라는 것도 이때 확인했습니다.
+### 시작 구조
+
+처음에는 요청 한 건마다 INSERT와 COMMIT을 수행했습니다.
+
+```mermaid
+flowchart LR
+    R["Request"]
+    I["INSERT"]
+    C["COMMIT"]
+    F["fsync"]
+
+    R --> I --> C --> F
+```
+
+### 측정
+
+처리량은 약 33 req/s에서 더 이상 증가하지 않았습니다.
+
+당시 상태는 다음과 같았습니다.
+
+- CPU 사용률: 2~8%
+- HikariCP pending: 약 190
+- 디스크 `%util`: 약 97%
+- 요청당 fsync: 약 1.2회
+
+커넥션 풀 크기와 JVM 설정을 바꿔도 처리량은 거의 달라지지 않았습니다.
+
+### 확인한 내용
+
+요청마다 발생하는 디스크 동기화가 처리량을 제한하고 있었습니다.
 
 상세: [M0.md](docs/measurements/M0.md)
+
+<br>
+
 </details>
 
+---
+
 <details>
-<summary><b>M1 — 배치 적재로 33 → 1,437 req/s (~44×), 내구성 유지</b></summary>
+<summary><b>M1 - 배치 적재 33 → 1,437 req/s</b></summary>
 
-fsync를 줄이는 두 축(flush 설정 완화 vs 배치)을 변수 분해(A0~A3)로 측정했습니다.
+<br>
 
-- `innodb_flush_log_at_trx_commit=2`(내구성 완화): 33 → 66. fsync가 원인임을 격리(진단용).
-- 배치 적재(인메모리 큐 + 배치 워커, 멀티로우 INSERT): **1,437 req/s**, 요청당 fsync 1.2 → 0.059, **내구성 유지(flush=1)**.
-- 배치 후 flush 완화(A3)는 무변 — redo 로그는 더는 병목이 아님. 내구성을 포기해 얻는 게 없어 배치만 채택.
+### 변경
+
+fsync 횟수를 줄이기 위해 flush 설정 변경과 배치 적재를 각각 테스트했습니다.
+
+#### flush 설정 변경
+
+```text
+innodb_flush_log_at_trx_commit=1
+→
+innodb_flush_log_at_trx_commit=2
+```
+
+처리량은 33 req/s에서 약 66 req/s로 증가했습니다.
+
+디스크 동기화 비용이 처리량에 영향을 주고 있다는 것을 확인하기 위한 테스트였고, 내구성 조건이 달라지기 때문에 최종 설정에는 적용하지 않았습니다.
+
+#### 배치 적재
+
+```mermaid
+flowchart LR
+    subgraph BEFORE["Before"]
+        R1["1 Request"]
+        I1["1 INSERT"]
+        C1["1 COMMIT"]
+
+        R1 --> I1 --> C1
+    end
+
+    subgraph AFTER["After"]
+        RN["N Requests"]
+        BI["Multi-row INSERT"]
+        BC["1 COMMIT"]
+
+        RN --> BI --> BC
+    end
+```
+
+### 결과
+
+```text
+33 req/s
+→
+1,437 req/s
+```
+
+요청당 fsync 횟수도 약 1.2회에서 0.059회로 감소했습니다.
+
+배치 적재 이후에는 flush 설정을 추가로 완화해도 처리량 차이가 거의 없어 기존 내구성 설정을 유지했습니다.
 
 상세: [M1.md](docs/measurements/M1.md)
+
+<br>
+
 </details>
 
+---
+
 <details>
-<summary><b>M2 — TimescaleDB 전환: 랜덤 → 순차 쓰기, 5,459 rows/s (~3.8×)</b></summary>
+<summary><b>M2 - TimescaleDB 전환 1,437 → 5,459 rows/s</b></summary>
 
-M1 이후 남은 병목은 data fsync(InnoDB B-tree 제자리 갱신 = 랜덤 쓰기). 시계열 append 워크로드에 맞게 저장소를 TimescaleDB 하이퍼테이블(순차 쓰기)로 교체하고 MySQL을 제거했습니다.
+<br>
 
-포화점 1,437 → 5,459 rows/s, durable(`synchronous_commit=on`), 디스크 피크 59%(미포화)·평균 쓰기 200KB(순차) — 랜덤→순차 전환을 디스크 지표로 확증. 선택 근거와 기각한 대안(InfluxDB·ClickHouse·QuestDB 등)은 [ADR 0008](docs/decisions/0008-telemetry-store-timescaledb.md).
+### 문제
+
+배치 적재 이후에도 디스크 I/O가 처리량을 제한했습니다.
+
+Locus의 텔레메트리는 기존 값을 반복해서 수정하는 데이터보다 시간 순서대로 계속 추가되는 데이터에 가깝습니다.
+
+```text
+device A - 10:00:01
+device B - 10:00:01
+device A - 10:00:02
+device B - 10:00:02
+...
+```
+
+### 변경
+
+MySQL에서 PostgreSQL 기반 TimescaleDB로 저장소를 변경하고 하이퍼테이블을 사용했습니다.
+
+InfluxDB, ClickHouse, QuestDB도 함께 비교했습니다.
+
+선택 과정: [ADR 0008](docs/decisions/0008-telemetry-store-timescaledb.md)
+
+### 결과
+
+```text
+1,437 rows/s
+→
+5,459 rows/s
+```
+
+`synchronous_commit=on` 상태에서 측정했으며 디스크 피크 사용률은 약 59%였습니다.
 
 상세: [M2.md](docs/measurements/M2.md)
+
+<br>
+
 </details>
 
+---
+
 <details>
-<summary><b>M2-par·sustain — 워커 병렬화 + 청크 사이징으로 지속 10k 무손실, 압축은 측정으로 기각</b></summary>
+<summary><b>M2-par - 저장 워커 병렬화</b></summary>
 
-- 병목이 단일 배치 워커로 이동 → N 워커 병렬화(그룹 커밋 스케일)로 단일 HDD에서 도착 10k 무손실 달성. 다중 워커 device upsert 데드락도 이때 발견·수정(락 순서 통일).
-- 장시간 적재는 DB 성장으로 하락(13k → <10k) → 원인은 현재 청크 인덱스가 shared_buffers 초과. **청크 7일 → 5분**으로 63분 평평(편차 ±1%, 드롭 0).
-- **압축 정책은 측정으로 기각**: 압축비는 40×로 좋았으나 과정의 읽기 I/O가 포화 HDD에서 적재를 굶겨 27분간 586만 행 드롭. raw 적재 + **retention 12h**(청크 drop, I/O 쌈)로 확정.
+<br>
 
-상세: [M2-par.md](docs/measurements/M2-par.md) · [M2-sustain.md](docs/measurements/M2-sustain.md)
+### 문제
+
+TimescaleDB 전환 이후에는 단일 배치 워커가 다음 병목이 됐습니다.
+
+```mermaid
+flowchart LR
+    RS[("Redis Streams")]
+    BW["Batch Worker"]
+    DB[("TimescaleDB")]
+
+    RS --> BW --> DB
+```
+
+### 변경
+
+배치 워커를 여러 개로 나눠 동시에 저장하도록 변경했습니다.
+
+```mermaid
+flowchart LR
+    RS[("Redis Streams")]
+    W1["Worker 1"]
+    W2["Worker 2"]
+    W3["Worker 3"]
+    W4["Worker 4"]
+    DB[("TimescaleDB")]
+
+    RS --> W1
+    RS --> W2
+    RS --> W3
+    RS --> W4
+
+    W1 --> DB
+    W2 --> DB
+    W3 --> DB
+    W4 --> DB
+```
+
+### 추가로 발생한 문제
+
+여러 워커가 같은 device 레코드를 갱신하면서 데드락이 발생했습니다.
+
+업데이트 대상의 락 획득 순서를 통일해 해결했습니다.
+
+### 결과
+
+초당 10,000건까지 지속적으로 저장할 수 있었습니다.
+
+상세: [M2-par.md](docs/measurements/M2-par.md)
+
+<br>
+
 </details>
 
+---
+
 <details>
-<summary><b>M4a — 읽기 경로: 쿼리 재설계로 관제 조회 p95 8.65s → 35ms (~250×)</b></summary>
+<summary><b>M2-sustain - 장시간 적재와 하이퍼테이블 청크 조정</b></summary>
 
-디바이스별 최신 조회(naive 상관 서브쿼리)가 100만 행에서 8.7s. `EXPLAIN`으로 원인 확인 — 결과는 디바이스 수만큼 작은데 일이 전체 행 수에 비례(서브쿼리 100만 회 재실행).
+<br>
 
-`DISTINCT ON`(전체 정렬, RAM 초과 시 디스크 정렬로 급락)과 `LATERAL`(device당 PK 인덱스 1회 = O(디바이스))을 비교 측정, LATERAL 채택. 캐시 없이 쿼리만으로 ~250×. Redis 캐시 코드는 있으나 쿼리로 충분해 기본 비활성(캐시의 역할은 push 접속 스냅샷으로 보류).
+### 문제
+
+짧은 테스트에서는 10,000건/s 이상을 처리했지만 데이터가 계속 쌓이면 처리량이 감소했습니다.
+
+현재 청크의 인덱스 크기가 `shared_buffers`를 넘어가는 시점부터 성능이 떨어졌습니다.
+
+### 변경
+
+하이퍼테이블 청크 구간을 다음과 같이 변경했습니다.
+
+```text
+7일
+→
+5분
+```
+
+### 결과
+
+변경 후 63분 동안 약 ±1% 범위에서 초당 10,000건의 처리량을 유지했습니다.
+
+### 압축 테스트
+
+TimescaleDB 압축도 함께 테스트했습니다.
+
+저장 공간은 크게 줄었지만 압축 과정에서 발생하는 읽기 I/O가 HDD를 사용하면서 실시간 적재가 밀렸습니다.
+
+현재 테스트 환경에서는 압축을 사용하지 않고 12시간 retention 이후 청크를 삭제하도록 구성했습니다.
+
+상세: [M2-sustain.md](docs/measurements/M2-sustain.md)
+
+<br>
+
+</details>
+
+---
+
+<details>
+<summary><b>M4a - 최신 상태 조회 p95 8.65s → 35ms</b></summary>
+
+<br>
+
+### 문제
+
+관제 화면에서는 전체 텔레메트리가 아니라 각 디바이스의 가장 최근 상태 한 건이 필요합니다.
+
+처음 사용한 상관 서브쿼리는 데이터가 100만 건까지 증가했을 때 p95 약 8.65초가 걸렸습니다.
+
+### 비교
+
+`EXPLAIN` 실행 계획을 확인하고 다음 두 방법을 비교했습니다.
+
+- `DISTINCT ON`
+- `LATERAL`
+
+`DISTINCT ON`은 많은 데이터를 정렬해야 했고 메모리를 초과하면 디스크 정렬이 발생했습니다.
+
+`LATERAL`은 각 디바이스에 대해 인덱스를 이용해 최신 데이터 한 건만 조회할 수 있었습니다.
+
+### 결과
+
+```text
+p95 8.65s
+→
+35ms
+```
+
+Redis 캐시를 추가하지 않은 상태의 결과입니다.
+
+현재는 DB 조회만으로 필요한 응답 시간을 확보해 기본 조회 경로에서는 캐시를 사용하지 않습니다.
 
 상세: [M4a.md](docs/measurements/M4a.md)
+
+<br>
+
 </details>
 
+---
+
 <details>
-<summary><b>M4b — Redis Streams fan-out: 지속 10k 무손실, 재시작 at-least-once, 포이즌 내성</b></summary>
+<summary><b>M4b - Redis Streams fan-out과 재처리</b></summary>
 
-인메모리 큐를 Redis Streams로 교체 — `storage`·`monitoring` 컨슈머 그룹 분리, WebSocket/STOMP push(지도 폴링 대체).
+<br>
 
-- 지속 10k 무손실(워커 4·MAXLEN 400K — maxmemory에서 역산해 사이징), 재시작 시 pending 회수로 at-least-once 실증.
-- 짧은 부하는 warm-up을 정상상태로 오인한다는 것도 이때 기록(90s 런의 "10K 못 버팀"은 트랜지언트, 5분 런으로 정정).
-- 포이즌 내성: 트림돼 payload가 없는 pending 엔트리·손상 JSON이 두 컨슈머를 각각 망가뜨리던 버그를 수정(처리 불가 엔트리는 드롭·카운트, 좋은 엔트리만 처리 후 XACK).
+### 변경
+
+```mermaid
+flowchart LR
+    RS[("telemetry.stream")]
+
+    STORAGE["storage consumer group"]
+    MONITORING["monitoring consumer group"]
+    GEOFENCE["geofence consumer group"]
+
+    RS --> STORAGE
+    RS --> MONITORING
+    RS --> GEOFENCE
+```
+
+각 Consumer Group은 같은 이벤트를 독립적으로 처리합니다.
+
+### 재시작 처리
+
+메시지를 처리한 뒤에만 `XACK`하도록 구성했습니다.
+
+처리 중 애플리케이션이 종료되면 해당 메시지는 Pending 상태로 남고, 재시작 후 다시 가져와 처리합니다.
+
+### 처리할 수 없는 메시지
+
+테스트 중 다음 데이터가 워커를 중단시키는 문제도 있었습니다.
+
+- Stream trim으로 payload가 사라진 Pending Entry
+- 파싱할 수 없는 JSON
+
+처리할 수 없는 메시지는 별도로 집계하고 건너뛰도록 변경해 다른 정상 메시지는 계속 처리하도록 했습니다.
 
 상세: [M4b.md](docs/measurements/M4b.md)
+
+<br>
+
 </details>
 
-<details>
-<summary><b>M-MQTT — IoT 표준 수집 경로: 인입 병렬화로 3.25K → ~9K (2.8×)</b></summary>
+---
 
-MQTT(Mosquitto, `telemetry/{deviceId}`) 수집 추가. 첫 측정에서 ~3.25K — 같은 저장 경로가 HTTP로는 9.7K를 처리하므로 병목을 인입 계층(단일 Paho 콜백 스레드)으로 격리. 워커 스레드 8 + shared subscription 다중 연결로 ~9K까지. "디스크 90% = 저장 한계"가 아니라 저인입의 증상(작은 배치 → 잦은 커밋)이었다는 오판 정정 포함.
+<details>
+<summary><b>M-MQTT - MQTT 수집 3.25K → 약 9K</b></summary>
+
+<br>
+
+### 추가한 경로
+
+IoT 디바이스에서 많이 사용하는 MQTT(Message Queuing Telemetry Transport) 수집 경로를 추가했습니다.
+
+```text
+telemetry/{deviceId}
+```
+
+### 문제
+
+첫 측정에서는 약 3,250건/s에서 처리량이 더 이상 증가하지 않았습니다.
+
+같은 저장 경로를 사용하는 HTTP에서는 약 9,700건/s를 처리하고 있었기 때문에 MQTT 수집 구간을 확인했습니다.
+
+### 원인
+
+Paho MQTT 클라이언트의 단일 callback 처리 구간에서 병목이 발생했습니다.
+
+### 변경
+
+- 작업 처리 스레드 8개
+- Shared Subscription
+- 다중 MQTT 연결
+
+### 결과
+
+```text
+3,250 msg/s
+→
+약 9,000 msg/s
+```
 
 상세: [M-MQTT.md](docs/measurements/M-MQTT.md)
+
+<br>
+
 </details>
 
+---
+
 <details>
-<summary><b>M3 — 추상화 검증: 둘째 디바이스 타입(AMR) 추가에 core 로직 diff 0</b></summary>
+<summary><b>M3 - AMR 디바이스 타입 추가</b></summary>
 
-수집 봉투를 디바이스 무관하게 재설계(공통칸 + `metrics` JSONB)하고 최소수집 게이트를 `DeviceTypeHandler.gate()` 전략으로 이동. 로봇 타입 `AMR`을 추가했을 때 core 변경은 enum 값 1줄 + 게이트 훅뿐(판정 엔진·엔티티 불변) — 양축 추상화가 실제로 동작함을 diff로 검증. 폰 프라이버시 게이트(permission=DENIED → 위치 미수집)는 동작 불변을 테스트로 고정.
+<br>
 
-AMR 상태 스키마는 임의로 지어내지 않고 개방 표준(ROS 2 `common_interfaces` Apache-2.0 · VDA5050 MIT)을 참조해 이 저장소에서 독립 정의했습니다 — Boston Dynamics SDK는 제품 전용 라이선스(BDSDK-SL)라 제외. 로봇 고유 상태(`operatingMode`·`estopState`·`batteryStatus`·odom 등)는 `metrics` JSONB에 문자열 코드로 담아 core는 여전히 디바이스 타입을 모르고(상태 어휘는 `app`에만), `AmrHandler`가 물리적 모순(주행 중인데 비상정지·점검·충전)을 거부합니다.
+처음에는 PHONE 텔레메트리만 처리했지만 이후 AMR(Autonomous Mobile Robot)을 추가했습니다.
 
-상세: 구조 검증이라 별도 측정 문서 없음 — 근거는 ArchUnit 경계 테스트·core diff([STATUS](docs/STATUS.md) M3 절), AMR 스키마 설계 근거는 [amr-telemetry.md](docs/reference/amr-telemetry.md).
+### 데이터 구조
+
+공통 데이터는 고정 필드로 두고 디바이스별 상태는 `metrics` JSONB에 저장합니다.
+
+```text
+Telemetry
+├── deviceId
+├── deviceType
+├── recordedAt
+├── location
+└── metrics
+```
+
+### 타입별 처리
+
+타입별 수집 조건은 `DeviceTypeHandler`에서 처리합니다.
+
+```text
+PHONE → PhoneHandler
+AMR   → AmrHandler
+```
+
+AMR 타입을 추가할 때 지오펜스 판정 엔진과 텔레메트리 엔티티는 변경하지 않았습니다.
+
+AMR 상태 값은 ROS 2 `common_interfaces`와 VDA5050을 참고해 정의했습니다.
+
+상세:
+
+- [STATUS.md](docs/STATUS.md)
+- [amr-telemetry.md](docs/reference/amr-telemetry.md)
+
+<br>
+
 </details>
 
-<details>
-<summary><b>M-http-capacity — HTTP 인입 최대 처리량의 병목 = 박스 CPU (12K → 16K 선형 확장)</b></summary>
+---
 
-fresh 볼륨 함대 스윕(1 VU = 1 디바이스 1Hz)으로 인입 상한 규명. 코어 핀 6 → 8에 12K → 16K 선형 확장 = CPU가 병목(지배분은 앱 요청 처리 ≈0.3ms/req, DB 아님). 이전 측정의 "HTTP ~10K 한계" 귀속을 정정(누적 DB 상태 열화 + 부하도구 포화 구간의 값이었음).
+<details>
+<summary><b>M-http-capacity - HTTP 인입 처리량 12K → 16K</b></summary>
+
+<br>
+
+HTTP 수집 구간 자체의 최대 처리량도 별도로 측정했습니다.
+
+동일한 데이터베이스 상태에서 애플리케이션에 할당한 CPU 코어 수만 변경했습니다.
+
+```text
+6 cores → 약 12K req/s
+8 cores → 약 16K req/s
+```
+
+코어 수를 늘렸을 때 처리량도 함께 증가했습니다.
+
+해당 조건에서는 애플리케이션의 요청 처리 CPU가 병목이었습니다.
 
 상세: [M-http-capacity.md](docs/measurements/M-http-capacity.md)
+
+<br>
+
 </details>
 
+---
+
 <details>
-<summary><b>M-e2e-soak — 전 구간 통합 소크: 60분+ 무손실, 지속 한계는 부하 생성기</b> (2026-07)</summary>
+<summary><b>M-e2e-soak - 전체 구간 60분 이상 장시간 테스트</b></summary>
 
-그동안 구간별로 따로 검증했던 것을 전 구간(HTTP → Streams → TimescaleDB)으로 한 번에: 1만 대 × 1Hz, 66분, **유실 0**(양끝 정산 — k6 발신 ≈ 스트림 수신 ≈ 전량 적재, lag·pending·포이즌 0).
+<br>
 
-- 지속 처리량이 10k를 살짝 못 미친(~9.8k) 원인을 규명: 서버는 정상(p95 24ms·디스크 70%)인데 부하 머신이 포화(load 11.47 > 코어 10·메모리 고갈) — **한계는 파이프라인이 아니라 단일 부하 생성기**.
-- 가상 스레드 실험은 회귀로 기각(처리량 ↓·지연 25×) — 무제한 admission이 공유 직렬화 지점을 과부하시켰고 바운드 스레드풀이 사실상의 admission control이었음. 오판·정정 과정 포함 기록.
+각 구간을 따로 측정한 뒤 마지막으로 전체 경로를 연결해 장시간 테스트했습니다.
+
+```mermaid
+flowchart LR
+    K6["k6"]
+    HTTP["HTTP"]
+    APP["Spring Boot"]
+    RS[("Redis Streams")]
+    SW["Storage Workers"]
+    DB[("TimescaleDB")]
+
+    K6 --> HTTP --> APP --> RS --> SW --> DB
+```
+
+### 조건
+
+```text
+10,000 devices
+1 event / device / second
+66 minutes
+```
+
+### 결과
+
+발신량, Redis Streams 수신량, 저장 상태를 비교했고 테스트 종료 시 처리되지 않고 남은 메시지는 없었습니다.
+
+서버 HTTP p95는 약 24ms였고 디스크 사용률에도 여유가 있었습니다.
+
+테스트 후반 실제 생성량이 약 9.8K/s에 머문 구간에서는 k6를 실행한 부하 생성 머신의 CPU와 메모리가 포화된 상태였습니다.
+
+### 가상 스레드 테스트
+
+Java Virtual Thread도 같은 조건에서 테스트했습니다.
+
+해당 구조에서는 처리량이 감소하고 지연이 증가해 기존 bounded thread pool 구성을 유지했습니다.
 
 상세: [M-e2e-soak.md](docs/measurements/M-e2e-soak.md)
+
+<br>
+
 </details>
 
 ---
 
 ## 아키텍처 결정
 
-결정의 이유와 기각한 대안을 [ADR](docs/decisions/)에 남깁니다. 코드보다 "왜"를 먼저 보면 좋습니다.
+주요 기술 선택과 비교 내용은 [ADR](docs/decisions/)에 정리했습니다.
 
-- **측정 주도** — 단순한 정답부터(YAGNI), 부하·프로파일링으로 병목을 찾고, 측정 근거로만 개선. 효과 없던 시도(압축·bgwriter 트리클·가상 스레드)도 기록.
-- **저장소: MySQL → TimescaleDB 전환 완료** — M1에서 병목이 InnoDB B-tree 랜덤 쓰기임을 측정, 시계열 적재에 맞는 순차 쓰기(하이퍼테이블) + 보존 자동화(retention)로 교체. [ADR 0008](docs/decisions/0008-telemetry-store-timescaledb.md)
-- **메시징: Redis Streams (Kafka 아님)** — fan-out·결합도 분리는 컨슈머 그룹으로 충분하고 이 규모에 가볍습니다. 최대 처리량은 메시지 큐가 아니라 저장소가 정한다는 것을 측정으로 확인. 한계 도달 시 측정 결과를 보고 Kafka 전환 검토. [ADR 0007](docs/decisions/0007-messaging-storage-redis-streams-and-governance.md)
-- **DeviceType이 데이터 거버넌스 축** — 디바이스 타입이 보존 정책과 데이터 도달 범위를 가릅니다(폰 위치는 장기 보존 경로가 구조상 없음). [ADR 0007](docs/decisions/0007-messaging-storage-redis-streams-and-governance.md)
-- **포트는 교체 지점에만** — 헥사고날 전면 채택 없이, 구현을 교체할 계획이 있는 이음새(수집·캐시·지오펜스 상태)에만 출력 포트. [ADR 0004](docs/decisions/0004-ports-only-at-improvement-seams.md)
-- **core는 infra-free + ArchUnit** — 도메인·전략·판정 엔진은 Spring·Kafka·Redis·Web에 의존하지 못합니다(빌드 게이트로 강제). [ADR 0002](docs/decisions/0002-single-module-with-archunit.md) · [ADR 0003](docs/decisions/0003-feature-slice-with-core-app-split.md)
-- **열린 위험은 등록부로** — 결정(ADR)·보류(ROADMAP)와 구분해 알고 있는 미해결 위험(Redis 장애 시 버퍼 유실, 지속 과부하 시 조용한 트림 등)을 [RISKS.md](docs/RISKS.md)에 유지.
+### 저장소: MySQL → TimescaleDB
+
+배치 적재 이후에도 디스크 쓰기가 처리량을 제한해 시계열 적재에 맞는 저장소를 비교했습니다.
+
+현재 설정:
+
+```text
+chunk interval: 5 minutes
+retention: 12 hours
+compression: disabled
+```
+
+[ADR 0008](docs/decisions/0008-telemetry-store-timescaledb.md)
+
+---
+
+### 메시징: Redis Streams
+
+저장, 관제, 지오펜스 처리를 독립적으로 소비하기 위해 Redis Streams Consumer Group을 사용합니다.
+
+현재 필요한 기능은 다음과 같습니다.
+
+- Consumer Group
+- Pending 메시지 재처리
+- 처리 완료 후 ACK
+- 처리 경로별 fan-out
+
+현재 규모에서는 Redis Streams로 필요한 구조를 구성할 수 있어 Kafka는 사용하지 않았습니다.
+
+[ADR 0007](docs/decisions/0007-messaging-storage-redis-streams-and-governance.md)
+
+---
+
+### DeviceType
+
+PHONE과 AMR은 같은 텔레메트리 구조를 사용하지만 타입마다 필요한 상태 값과 수집 조건은 다릅니다.
+
+타입별 차이는 `DeviceTypeHandler`에서 처리하고 공통 처리 로직은 유지했습니다.
+
+[ADR 0007](docs/decisions/0007-messaging-storage-redis-streams-and-governance.md)
+
+---
+
+### 포트 적용 범위
+
+프로젝트 전체를 헥사고날 구조로 구성하지 않고 구현을 교체할 가능성이 있는 경계에만 포트를 사용했습니다.
+
+현재 적용 영역:
+
+- 수집
+- 캐시
+- 지오펜스 상태
+
+[ADR 0004](docs/decisions/0004-ports-only-at-improvement-seams.md)
+
+---
+
+### core 의존성
+
+지오펜스 판정과 디바이스별 정책을 포함하는 `core` 패키지는 Spring, Redis, Web 계층에 직접 의존하지 않도록 구성했습니다.
+
+ArchUnit 테스트에서 의존 방향을 확인합니다.
+
+- [ADR 0002](docs/decisions/0002-single-module-with-archunit.md)
+- [ADR 0003](docs/decisions/0003-feature-slice-with-core-app-split.md)
+
+---
+
+### 리스크 관리
+
+현재 알고 있는 미해결 항목은 [RISKS.md](docs/RISKS.md)에 따로 정리합니다.
+
+예:
+
+- Redis 장애 시 인입 데이터 처리
+- 지속적인 과부하에서 Stream trim이 발생하는 경우
+- 관제 인증
 
 ---
 
 ## 기술 스택
 
-- **현재**: Java 21 · Spring Boot 3.4 · Gradle(Kotlin DSL) · TimescaleDB(PostgreSQL 16) · Redis 7(Streams) · Mosquitto(MQTT) · WebSocket/STOMP · k6 · Prometheus/Grafana · Docker · ArchUnit · Flyway
-- **로드맵**: 위치 암호화·보존 정책(M6) · 시간 파티셔닝 조회·복제(M7) · Kubernetes(M8)
+- Java 21
+- Spring Boot 3.4
+- Gradle Kotlin DSL
+- PostgreSQL 16 / TimescaleDB
+- Redis 7 / Redis Streams
+- Mosquitto / MQTT
+- WebSocket / STOMP
+- Flyway
+- Prometheus / Grafana
+- k6
+- Docker
+- Testcontainers
+- ArchUnit
 
 ---
 
 ## 빠른 시작
 
-전체 스택을 한 줄로 띄웁니다. Docker만 있으면 되고 JDK는 필요 없습니다.
+Docker Compose로 전체 환경을 실행할 수 있습니다.
 
 ```bash
 docker compose --profile app up -d
 ```
 
-인프라(TimescaleDB·Redis·Mosquitto) + 앱 + 시뮬레이터가 함께 뜹니다. 20초쯤 뒤 <http://localhost:8093>을 열면 폰 40대·로봇 10대가 1Hz로 움직이고, 로봇이 작업구역 경계를 넘을 때 지오펜스 ENTER/EXIT가 뜹니다.
+다음 구성요소가 함께 실행됩니다.
 
-```bash
-docker compose --profile app logs -f app   # 앱 로그
-docker compose --profile app down -v       # 정리 (-v = DB 볼륨까지)
+- TimescaleDB
+- Redis
+- Mosquitto
+- Spring Boot 애플리케이션
+- 디바이스 시뮬레이터
+
+실행 후 다음 주소에서 관제 화면을 확인할 수 있습니다.
+
+```text
+http://localhost:8093
 ```
 
-- 관제 지도: <http://localhost:8093> (Leaflet, WebSocket/STOMP push — 타입별 마커·상태·지오펜스 이벤트)
-- 메트릭: <http://localhost:8093/actuator/prometheus>
+시뮬레이터는 PHONE 40대와 AMR 10대의 텔레메트리를 1초마다 전송합니다.
 
-앱 컨테이너는 측정 경로(`scripts/run-app.sh`)와 같은 자원 조건으로 뜹니다 — 코어 핀 `0-5`, 힙 고정 `-Xms1500m -Xmx1500m`, G1GC. 기록된 측정은 호스트 JVM에서 잰 값이지만 설정이 갈려 값이 어긋나지는 않게 맞춰 뒀습니다.
+```bash
+docker compose --profile app logs -f app
+docker compose --profile app down -v
+```
+
+메트릭:
+
+```text
+http://localhost:8093/actuator/prometheus
+```
+
+---
 
 <details>
-<summary>포트·CPU가 겹칠 때</summary>
+<summary><b>포트 또는 CPU 설정 변경</b></summary>
 
-기본 포트(5432·6379·1883·8093)가 이미 쓰이고 있으면 `.env`로 옮깁니다.
+<br>
 
-```bash
-cp .env.example .env   # DB_HOST_PORT / REDIS_HOST_PORT / MQTT_HOST_PORT / APP_HOST_PORT 수정
-```
-
-CPU 핀은 기본이 `0-5`입니다 — 측정 기록과 같은 조건을 재현하기 위한 값이라 그대로 두면 됩니다. 여기서 세는 건 호스트의 코어 수가 아니라 **Docker VM에 할당된 vCPU 수**입니다(macOS·Windows는 VM 안에서 돕니다). 6개 미만이면 `Requested CPUs are not available`로 기동이 실패하므로 VM 할당을 올립니다.
+기본 포트를 이미 사용 중이라면 `.env` 파일에서 변경할 수 있습니다.
 
 ```bash
-colima stop && colima start --cpu 8 --memory 8   # colima
-# Docker Desktop: Settings → Resources → CPUs 8 이상
+cp .env.example .env
 ```
 
-VM 자원을 늘릴 수 없을 때만 `.env`에 `LOCUS_CPUSET=`(빈 값)을 넣어 핀을 풉니다. 핀을 푼 환경에서 잰 값은 기록된 측정과 비교할 수 없습니다.
+설정 가능한 포트:
+
+```text
+DB_HOST_PORT
+REDIS_HOST_PORT
+MQTT_HOST_PORT
+APP_HOST_PORT
+```
+
+기본 CPU pinning은 `0-5`입니다.
+
+macOS와 Windows에서는 Docker VM에 할당된 vCPU가 6개 미만이면 실행되지 않을 수 있습니다.
+
+Colima:
+
+```bash
+colima stop
+colima start --cpu 8 --memory 8
+```
+
+Docker Desktop에서는 `Settings → Resources`에서 CPU 수를 변경할 수 있습니다.
+
+CPU pinning 없이 실행하려면 `.env`에 다음 값을 설정합니다.
+
+```text
+LOCUS_CPUSET=
+```
+
+이 경우 README에 기록한 성능 측정 조건과는 달라집니다.
+
+<br>
+
 </details>
 
-<details>
-<summary>호스트 JVM으로 실행 (측정 경로)</summary>
+---
 
-기록된 측정은 모두 호스트 JVM에서 잰 값입니다(GC 로그·taskset, [RUNBOOK](docs/measurements/RUNBOOK.md)). 이 경로로 실행할 때는 `--profile app` 없이 인프라만 띄웁니다 — 컨테이너 앱이 같이 뜨면 같은 코어를 나눠 써 교란변수가 됩니다.
+<details>
+<summary><b>호스트 JVM으로 실행</b></summary>
+
+<br>
+
+README에 기록한 성능 측정은 호스트 JVM에서 진행했습니다.
+
+측정 환경과 실행 조건은 [RUNBOOK](docs/measurements/RUNBOOK.md)에 정리했습니다.
+
+인프라만 Docker로 실행합니다.
 
 ```bash
-docker compose up -d                                  # 인프라만
-./gradlew bootRun                                     # 기본(direct 적재)
-SPRING_PROFILES_ACTIVE=stream ./gradlew bootRun       # 프로덕션 인입 경로(Redis Streams)
-./gradlew bootRun --args='--spring.profiles.active=simulator'   # 가상 디바이스 전송
+docker compose up -d
 ```
+
+기본 실행:
+
+```bash
+./gradlew bootRun
+```
+
+Redis Streams 경로:
+
+```bash
+SPRING_PROFILES_ACTIVE=stream ./gradlew bootRun
+```
+
+시뮬레이터:
+
+```bash
+./gradlew bootRun --args='--spring.profiles.active=simulator'
+```
+
+테스트:
+
+```bash
+./gradlew test
+./gradlew check
+```
+
+<br>
+
 </details>
 
-```bash
-./gradlew test    # 단위 + 웹 테스트 (빠름, Docker 불필요)
-./gradlew check   # + 통합 테스트 (Testcontainers 실 PostgreSQL·Redis·Mosquitto)
-```
+---
 
 <details>
-<summary>통합 테스트 로컬 실행 시 colima 설정</summary>
+<summary><b>통합 테스트 로컬 실행 시 Colima 설정</b></summary>
 
-Testcontainers가 colima 소켓·새 Docker API를 인식하도록 아래 env가 필요합니다(빌드가 테스트 JVM에 전달). CI(GitHub Actions 표준 Docker)는 불필요합니다.
+<br>
+
+Testcontainers에서 Colima Docker 소켓을 사용하려면 다음 환경 변수를 설정합니다.
 
 ```bash
 export DOCKER_HOST="unix://$HOME/.colima/default/docker.sock"
 export DOCKER_API_VERSION=1.44
 export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 ```
+
+GitHub Actions의 기본 Docker 환경에서는 별도 설정이 필요하지 않습니다.
+
+<br>
+
 </details>
 
 ---
 
 ## 문서
 
-- [docs/STATUS.md](docs/STATUS.md) — 진행 현황(기준 문서)
-- [docs/measurements/](docs/measurements/) — 마일스톤별 측정 기록(원본 로그 포함)
-- [docs/decisions/](docs/decisions/) — ADR(왜 + 기각한 대안)
-- [docs/RISKS.md](docs/RISKS.md) — 아키텍처 리스크 등록부(열린 위험)
-- [docs/STRUCTURE.md](docs/STRUCTURE.md) — 파일트리 ↔ 결정 매핑
-- [docs/ROADMAP.md](docs/ROADMAP.md) — 마일스톤 ↔ 트리 위치 + 목표 SLO
-- [SECURITY.md](SECURITY.md) — 보안 정책(민감정보·비밀 관리)
-
----
-
-## 로드맵
-
-- ✅ **M0~M2** 수집·조회·시뮬레이터 + 적재 경로 개선(33 → 1,437 → 지속 10k 무손실)
-- ✅ **M4** 실시간 — 읽기 경로 ~250× · Redis Streams fan-out · WebSocket push (잔여: 인증)
-- ✅ **M-MQTT** IoT 표준 수집 경로 (3.25K → ~9K)
-- ✅ **M3** 추상화 검증 — 타입 추가에 core diff 0
-- ✅ **M-e2e-soak** 전 구간 통합 소크 60분+ 무손실
-- 🔄 **M5** 지오펜스 판정 엔진(`core.engine`) — 슬라이스1 완료(위 데모가 그 결과). 잔여: 존 CRUD·영속·폴리곤·판정 처리량 측정
-- 🔄 **M8** 컨테이너 — 앱 이미지 + compose 한 줄 실행까지. k8s는 남음
-- ⬜ **M6** 민감정보 보호·보존 · **M7** 대용량 조회·복제 · (페이즈2) 명령 다운링크·정합성
-
-> 목표 SLO와 전체 마일스톤은 [ROADMAP](docs/ROADMAP.md)에 있습니다. 측정 근거 없이 기능을 늘리지 않고 각 단계를 before/after로 정당화합니다.
+- [docs/STATUS.md](docs/STATUS.md) - 진행 현황
+- [docs/measurements/](docs/measurements/) - 성능 측정 기록과 원본 로그
+- [docs/decisions/](docs/decisions/) - 주요 기술 선택과 비교 내용
+- [docs/RISKS.md](docs/RISKS.md) - 현재 확인된 리스크
+- [docs/STRUCTURE.md](docs/STRUCTURE.md) - 프로젝트 구조
+- [docs/ROADMAP.md](docs/ROADMAP.md) - 이후 작업
+- [SECURITY.md](SECURITY.md) - 보안 관련 설정
